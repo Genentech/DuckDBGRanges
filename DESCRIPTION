@@ -1,0 +1,54 @@
+Package: DuckDBGRanges
+Version: 0.9.0
+Date: 2026-01-21
+Title: DuckDB-Backed GenomicRanges Implementation
+Description:
+    Provides DuckDB-backed implementations of GenomicRanges data structures
+    for efficient, out-of-memory operations on large genomic interval datasets.
+    The package includes DuckDBGRanges and DuckDBGRangesList classes with
+    optimized range operations including restrict, flank, shift, findOverlaps,
+    and distance calculations. Ideal for variant analysis, scATAC-seq peak
+    analysis, and other genomic workflows requiring memory-efficient range
+    operations on large datasets.
+Authors@R:
+    c(
+        person("Patrick", "Aboyoun", role=c("aut", "cre"), email="aboyounp@gene.com"),
+        person("Genentech, Inc.", role="cph")
+    )
+License: MIT + file LICENSE
+Depends:
+    R (>= 4.3.0),
+    methods,
+    DuckDBDataFrame,
+    GenomicRanges
+Imports:
+    bit64,
+    BiocGenerics,
+    S4Vectors,
+    IRanges,
+    Seqinfo,
+    DelayedArray,
+    DBI,
+    dplyr,
+    dbplyr
+Suggests:
+    knitr,
+    rmarkdown,
+    BiocStyle,
+    testthat,
+    arrow,
+    TxDb.Hsapiens.UCSC.hg38.knownGene
+biocViews:
+    DataImport,
+    DataRepresentation,
+    Infrastructure,
+    Sequencing,
+    Software
+VignetteBuilder: knitr
+RoxygenNote: 7.3.3
+Encoding: UTF-8
+Collate:
+    'DuckDBGRanges-class.R'
+    'DuckDBGRanges-utils.R'
+    'DuckDBGRangesList-class.R'
+    'DuckDBGRangesList-utils.R'

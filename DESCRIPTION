@@ -1,6 +1,6 @@
 Package: DuckDBGRanges
 Version: 0.9.0
-Date: 2026-01-21
+Date: 2026-01-23
 Title: DuckDB-Backed GenomicRanges Implementation
 Description:
     Provides DuckDB-backed implementations of GenomicRanges data structures
@@ -36,6 +36,7 @@ Suggests:
     rmarkdown,
     BiocStyle,
     testthat,
+    microbenchmark,
     arrow,
     TxDb.Hsapiens.UCSC.hg38.knownGene
 biocViews:

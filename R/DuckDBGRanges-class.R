@@ -203,6 +203,8 @@
 #' names,DuckDBGRanges-method
 #' seqinfo,DuckDBGRanges-method
 #' seqnames,DuckDBGRanges-method
+#' seqlengths<-,DuckDBGRanges-method
+#' genome<-,DuckDBGRanges-method
 #' start,DuckDBGRanges-method
 #' end,DuckDBGRanges-method
 #' width,DuckDBGRanges-method
@@ -241,7 +243,7 @@ replaceSlots <- BiocGenerics:::replaceSlots
 .datacols_granges <- expression(seqnames = NULL, start = NULL, end = NULL, width = NULL, strand = NULL)
 
 #' @export
-#' @import methods
+#' @import methods BiocGenerics
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
 #' @importClassesFrom GenomicRanges GenomicRanges
 #' @importClassesFrom Seqinfo Seqinfo
@@ -255,7 +257,6 @@ setClass("DuckDBGRanges", contains = "GenomicRanges",
 ###
 
 #' @export
-#' @importFrom BiocGenerics dbconn
 setMethod("dbconn", "DuckDBGRanges", function(x) callGeneric(x@frame))
 
 #' @export
@@ -297,19 +298,31 @@ setMethod("seqinfo", "DuckDBGRanges", function(x) x@seqinfo)
 setMethod("seqnames", "DuckDBGRanges", function(x) x@frame[["seqnames"]])
 
 #' @export
-#' @importFrom BiocGenerics start
+#' @importFrom Seqinfo seqinfo seqlengths<-
+setReplaceMethod("seqlengths", "DuckDBGRanges", function (x, value) {
+    info <- seqinfo(x)
+    seqlengths(info) <- value
+    replaceSlots(x, seqinfo = info, check = FALSE)
+})
+
+#' @export
+#' @importFrom Seqinfo seqinfo genome<-
+setReplaceMethod("genome", "DuckDBGRanges", function (x, value) {
+    info <- seqinfo(x)
+    genome(info) <- value
+    replaceSlots(x, seqinfo = info, check = FALSE)
+})
+
+#' @export
 setMethod("start", "DuckDBGRanges", function(x, ...) x@frame[["start"]])
 
 #' @export
-#' @importFrom BiocGenerics end
 setMethod("end", "DuckDBGRanges", function(x, ...) x@frame[["end"]])
 
 #' @export
-#' @importFrom BiocGenerics width
 setMethod("width", "DuckDBGRanges", function(x) x@frame[["width"]])
 
 #' @export
-#' @importFrom BiocGenerics strand
 setMethod("strand", "DuckDBGRanges", function(x, ...) x@frame[["strand"]])
 
 #' @export
@@ -521,7 +534,6 @@ setAs("DuckDBGRanges", "DuckDBDataFrame", function(from) {
 
 #' @export
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
-#' @importFrom BiocGenerics as.data.frame
 setMethod("as.data.frame", "DuckDBGRanges",
 function(x, row.names = NULL, optional = FALSE, ...) {
     df <- as(x, "DuckDBDataFrame")
@@ -531,7 +543,6 @@ function(x, row.names = NULL, optional = FALSE, ...) {
 #' @export
 #' @importClassesFrom GenomicRanges GRanges
 #' @importClassesFrom S4Vectors DFrame
-#' @importFrom BiocGenerics strand
 #' @importFrom DuckDBDataFrame .has_row_number
 #' @importFrom Seqinfo seqinfo
 #' @importFrom GenomicRanges GRanges

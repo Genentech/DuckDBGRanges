@@ -418,7 +418,6 @@ NULL
 
 # Create a temporary DuckDB table from a GRanges query
 #' @importFrom dplyr copy_to tbl
-#' @importFrom BiocGenerics start end strand
 #' @importFrom GenomicRanges seqnames
 .granges_to_temp_table <- function(query, con, table_name = "query_ranges") {
     query_df <- data.frame(
@@ -544,7 +543,6 @@ function(q_start, s_start, q_end, s_end, q_strand, s_strand, maxgap = -1L,
 #' @importFrom IRanges findOverlaps
 #' @importFrom S4Vectors Hits selectHits
 #' @importFrom dplyr arrange collect filter inner_join mutate row_number select
-#' @importFrom BiocGenerics dbconn
 setMethod("findOverlaps", c("GRanges", "DuckDBGRanges"),
 function(query, subject, maxgap = -1L, minoverlap = 0L,
          type = c("any", "start", "end", "within", "equal"),
@@ -717,7 +715,6 @@ function(query, subject, maxgap = -1L, minoverlap = 0L,
 #' @export
 #' @importFrom IRanges countOverlaps
 #' @importFrom dplyr collect filter group_by inner_join mutate n row_number select summarize
-#' @importFrom BiocGenerics dbconn
 #' @importFrom DuckDBDataFrame tblconn
 setMethod("countOverlaps", c("GRanges", "DuckDBGRanges"),
 function(query, subject, maxgap = -1L, minoverlap = 0L,
@@ -824,7 +821,6 @@ function(query, subject, maxgap = -1L, minoverlap = 0L,
 # Helper to get logical vector of overlapping DuckDBGRanges elements
 #' @importFrom bit64 as.integer64 is.integer64
 #' @importFrom dplyr collect copy_to distinct inner_join pull select tbl
-#' @importFrom BiocGenerics dbconn
 #' @importFrom DuckDBDataFrame .has_row_number tblconn
 .overlapsAny_DuckDBGRanges <-
 function(query, subject, maxgap, minoverlap, type, ignore.strand = FALSE)
@@ -1519,7 +1515,6 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
 }
 
 #' @export
-#' @importFrom BiocGenerics duplicated
 setMethod("duplicated", "DuckDBGRanges", .duplicated.DuckDBGRanges)
 
 #' @export
@@ -2015,7 +2010,6 @@ function(x, y, ignore.strand = FALSE, ...)
 ###
 
 #' @export
-#' @importFrom BiocGenerics order
 #' @importFrom DuckDBDataFrame tblconn
 #' @importFrom dplyr arrange collect mutate row_number select
 #' @importFrom S4Vectors new2
@@ -2107,14 +2101,9 @@ function(..., na.last = TRUE, decreasing = FALSE,
 }
 
 #' @export
-sort.DuckDBGRanges <- function(x, decreasing = FALSE, ...)
-    .sort.DuckDBGRanges(x, decreasing = decreasing, ...)
-
-#' @export
 setMethod("sort", "DuckDBGRanges", .sort.DuckDBGRanges)
 
 #' @export
-#' @importFrom BiocGenerics is.unsorted
 #' @importFrom DuckDBDataFrame tblconn
 #' @importFrom dplyr collect filter mutate lag summarize
 setMethod("is.unsorted", "DuckDBGRanges",
@@ -2202,7 +2191,6 @@ function(x, na.rm = FALSE, strictly = FALSE, ignore.strand = FALSE, ...)
 })
 
 #' @export
-#' @importFrom BiocGenerics rank
 #' @importFrom DuckDBDataFrame tblconn
 #' @importFrom dbplyr window_order
 #' @importFrom dplyr arrange collect dense_rank group_by mutate row_number select ungroup
@@ -2258,7 +2246,6 @@ function(x, na.last = TRUE, ties.method = c("first", "min"), ignore.strand = FAL
 ###
 
 #' @export
-#' @importFrom BiocGenerics dbconn
 #' @importFrom DuckDBDataFrame tblconn
 #' @importFrom dplyr copy_to filter left_join mutate select tbl
 #' @importFrom IRanges trim
@@ -2333,7 +2320,6 @@ function(x, use.names = TRUE, ...)
 
 #' @export
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
-#' @importFrom BiocGenerics dbconn
 #' @importFrom DuckDBDataFrame .set_row_number tblconn
 #' @importFrom dplyr copy_to filter left_join mutate select
 #' @importFrom IRanges restrict
@@ -2893,7 +2879,6 @@ function(x, with.revmap = FALSE, ignore.strand = FALSE)
 
 #' @export
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
-#' @importFrom BiocGenerics union
 #' @importFrom DuckDBDataFrame .set_row_number tblconn
 #' @importFrom dplyr union_all
 #' @importFrom S4Vectors new2
@@ -2982,7 +2967,6 @@ function(x, y, ignore.strand = FALSE)
 })
 
 #' @export
-#' @importFrom BiocGenerics intersect
 #' @importFrom DuckDBDataFrame tblconn
 #' @importFrom dplyr arrange distinct filter group_by inner_join mutate select summarize
 #' @importFrom S4Vectors new2
@@ -3088,7 +3072,6 @@ function(x, y, ignore.strand = FALSE)
 })
 
 #' @export
-#' @importFrom BiocGenerics setdiff
 #' @importFrom DuckDBDataFrame tblconn
 #' @importFrom dbplyr window_order
 #' @importFrom dplyr arrange distinct filter group_by lag left_join mutate select summarize ungroup union_all
@@ -3328,7 +3311,6 @@ function(x, y, ignore.strand = FALSE)
 # @param subject DuckDBGRanges subject object
 # @param ignore.strand Whether to ignore strand
 # @return List with: joined (connection), n_x (length of x), n_subj (length of subject)
-#' @importFrom BiocGenerics dbconn
 #' @importFrom DuckDBDataFrame tblconn
 .setup_nearest_neighbor_join <- function(x, subject, ignore.strand) {
     # Get connections and database connection

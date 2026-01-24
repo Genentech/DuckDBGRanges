@@ -190,6 +190,8 @@
 #' names<-,DuckDBGRangesList-method
 #' seqinfo,DuckDBGRangesList-method
 #' seqnames,DuckDBGRangesList-method
+#' seqlengths<-,DuckDBGRangesList-method
+#' genome<-,DuckDBGRangesList-method
 #' start,DuckDBGRangesList-method
 #' end,DuckDBGRangesList-method
 #' width,DuckDBGRangesList-method
@@ -241,7 +243,6 @@ setClass("DuckDBGRangesList", contains = "GRangesList",
 ###
 
 #' @export
-#' @importFrom BiocGenerics updateObject
 setMethod("updateObject", "DuckDBGRangesList", function(object, ..., verbose = FALSE) {
     object
 })
@@ -251,7 +252,6 @@ setMethod("updateObject", "DuckDBGRangesList", function(object, ..., verbose = F
 ###
 
 #' @export
-#' @importFrom BiocGenerics dbconn
 setMethod("dbconn", "DuckDBGRangesList", function(x) callGeneric(x@frame))
 
 #' @export
@@ -322,19 +322,31 @@ setReplaceMethod("elementMetadata", "DuckDBGRangesList", function(x, value) {
 setMethod("seqnames", "DuckDBGRangesList", function(x) x@frame[["seqnames"]])
 
 #' @export
-#' @importFrom BiocGenerics start
+#' @importFrom Seqinfo seqinfo seqlengths<-
+setReplaceMethod("seqlengths", "DuckDBGRangesList", function (x, value) {
+    info <- seqinfo(x)
+    seqlengths(info) <- value
+    replaceSlots(x, seqinfo = info, check = FALSE)
+})
+
+#' @export
+#' @importFrom Seqinfo seqinfo genome<-
+setReplaceMethod("genome", "DuckDBGRangesList", function (x, value) {
+    info <- seqinfo(x)
+    genome(info) <- value
+    replaceSlots(x, seqinfo = info, check = FALSE)
+})
+
+#' @export
 setMethod("start", "DuckDBGRangesList", function(x, ...) x@frame[["start"]])
 
 #' @export
-#' @importFrom BiocGenerics end
 setMethod("end", "DuckDBGRangesList", function(x, ...) x@frame[["end"]])
 
 #' @export
-#' @importFrom BiocGenerics width
 setMethod("width", "DuckDBGRangesList", function(x) x@frame[["width"]])
 
 #' @export
-#' @importFrom BiocGenerics strand
 setMethod("strand", "DuckDBGRangesList", function(x, ...) x@frame[["strand"]])
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -342,7 +354,6 @@ setMethod("strand", "DuckDBGRangesList", function(x, ...) x@frame[["strand"]])
 ###
 
 #' @export
-#' @importFrom BiocGenerics dbconn
 #' @importFrom DuckDBDataFrame DuckDBDataFrame tblconn
 #' @importFrom DBI dbGetQuery
 #' @importFrom dplyr sql
@@ -447,7 +458,6 @@ setMethod("split", c("DuckDBGRanges", "DuckDBColumn"), function(x, f, drop = FAL
 ###
 
 #' @export
-#' @importFrom BiocGenerics unlist
 setMethod("unlist", "DuckDBGRangesList", function(x, recursive = TRUE, use.names = TRUE) {
     .NotYetImplemented()
 })

@@ -1,0 +1,864 @@
+---
+title: "Architecture of the DuckDBGRanges Package"
+author:
+- name: Patrick Aboyoun
+  email: aboyounp@gene.com
+  affiliation: Genentech, Inc.
+date: "Compiled: `r format(Sys.time(), '%B %d, %Y')`"
+package: DuckDBGRanges
+vignette: >
+  %\VignetteIndexEntry{Architecture of the DuckDBGRanges Package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+output:
+  BiocStyle::html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 4
+---
+
+```{r setup, echo=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
+```
+
+# Introduction
+
+The `r Biocpkg("DuckDBGRanges")` package provides DuckDB-backed implementations
+of `r Biocpkg("GenomicRanges")` data structures for efficient, out-of-memory
+operations on large genomic interval datasets. It builds upon the
+`r Biocpkg("DuckDBDataFrame")` foundation to deliver genomic range-specific
+functionality with SQL-optimized range operations.
+
+## Position in the Bioconductor Ecosystem
+
+`r Biocpkg("DuckDBGRanges")` extends the GenomicRanges framework with DuckDB
+backend support:
+
+```
+DuckDBDataFrame (foundation: tabular data + SQL)
+    ↓
+DuckDBGRanges (genomic intervals + range operations)
+    ↓
+BiocDuckDB (high-level I/O + genomic workflows)
+```
+
+| Class | Extends | Purpose |
+|-------|---------|---------|
+| *DuckDBGRanges* | *GenomicRanges* | Genomic intervals with DuckDB backend |
+| *DuckDBGRangesList* | *GRangesList* | Grouped genomic features (e.g., transcripts) |
+
+The package is designed for genomic analyses requiring:
+- **Large variant databases** (millions of positions)
+- **Comprehensive gene models** (millions of exons)
+- **scATAC-seq peaks** (hundreds of thousands of accessible regions)
+- **Genome-wide annotations** (regulatory elements, repeats, etc.)
+
+## Installation
+
+```{r install, eval=FALSE}
+if (!require("BiocManager"))
+    install.packages("BiocManager")
+BiocManager::install("DuckDBGRanges")
+```
+
+```{r load-package}
+library(DuckDBGRanges)
+library(DuckDBDataFrame)  # For examples
+library(GenomicRanges)    # For comparison
+```
+
+
+# Core Design Principles
+
+## GenomicRanges Integration
+
+`r Biocpkg("DuckDBGRanges")` implements the full *GenomicRanges* API while
+keeping data on disk in Parquet format. This provides:
+
+1. **Familiar interface**: All standard GRanges operations work
+2. **SQL optimization**: Range operations translate to efficient SQL
+3. **Lazy evaluation**: Operations build queries without immediate execution
+4. **Memory efficiency**: Only load data when needed
+
+### The Five Required Columns
+
+Every *DuckDBGRanges* object stores five essential columns:
+
+- **seqnames**: Chromosome/sequence names (e.g., "chr1", "chr2")
+- **start**: Start positions (1-based, inclusive)
+- **end**: End positions (1-based, inclusive)
+- **width**: Interval widths (end - start + 1)
+- **strand**: Strand information (+, -, or *)
+
+These are stored in a *DuckDBDataFrame* and accessed via SQL.
+
+
+## SQL-Optimized Range Operations
+
+Key range operations translate to efficient SQL:
+
+### findOverlaps()
+```sql
+SELECT a.id, b.id
+FROM ranges_a a JOIN ranges_b b
+  ON a.seqnames = b.seqnames
+  AND a.strand = b.strand
+  AND a.start <= b.end
+  AND a.end >= b.start
+```
+
+### distance()
+```sql
+SELECT
+  CASE
+    WHEN a.end < b.start THEN b.start - a.end
+    WHEN b.end < a.start THEN a.start - b.end
+    ELSE 0
+  END as distance
+FROM ranges_a a, ranges_b b
+```
+
+This SQL translation enables DuckDB's query optimizer to use indexes and
+parallel execution.
+
+
+## LIST[] Columns for Grouped Ranges
+
+*DuckDBGRangesList* uses DuckDB's `LIST[]` columns to store grouped ranges
+efficiently. Each row represents a group (e.g., a transcript), and the
+genomic coordinates are stored as lists:
+
+```
+transcript_id | seqnames      | start         | end           | strand
+ENST001       | ["chr1", ...] | [100, 200]    | [150, 250]    | ["+", "+"]
+ENST002       | ["chr2", ...] | [300, 400]    | [350, 450]    | ["-", "-"]
+```
+
+This representation is:
+- **Compact**: One row per group instead of one per range
+- **Efficient**: DuckDB's LIST[] operations are optimized
+- **Natural**: Matches the biological concept of grouped features
+
+
+# The DuckDBGRanges Class
+
+## Class Structure
+
+*DuckDBGRanges* extends *GenomicRanges* and contains a *DuckDBDataFrame*:
+
+```{r DuckDBGRanges-class}
+showClass("DuckDBGRanges")
+```
+
+### Slots
+
+**frame** (*DuckDBDataFrame*)
+: A DuckDBDataFrame with exactly five columns: seqnames, start, end, width,
+  and strand. Additional columns become metadata columns (mcols).
+
+**seqinfo** (*Seqinfo*)
+: Sequence information including chromosome lengths and genome build.
+
+**elementMetadata** (*DuckDBDataFrame* or NULL)
+: Metadata columns (mcols) stored as a separate DuckDBDataFrame sharing the
+  same backend as frame.
+
+
+## Construction
+
+### From Parquet Files
+
+```{r DuckDBGRanges-construct}
+# Create example genomic ranges
+gr <- GRanges(
+    seqnames = rep(c("chr1", "chr2"), c(3, 2)),
+    ranges = IRanges(start = c(100, 200, 300, 150, 250),
+                     end = c(150, 275, 360, 230, 295)),
+    strand = c("+", "-", "+", "-", "+"),
+    gene_id = paste0("GENE", 1:5),
+    score = c(10, 20, 15, 25, 18)
+)
+
+# Write to Parquet
+gr_df <- as.data.frame(gr)
+gr_df$range_id <- paste0("range", 1:nrow(gr_df))
+gr_path <- tempfile(fileext = ".parquet")
+arrow::write_parquet(gr_df, gr_path)
+
+# Create DuckDBGRanges
+gr_ddb <- DuckDBGRanges(gr_path,
+                        seqnames = "seqnames",
+                        start = "start",
+                        end = "end",
+                        strand = "strand",
+                        keycol = list(range_id = gr_df$range_id),
+                        mcols = c("gene_id", "score"))
+gr_ddb
+```
+
+### From Existing GRanges
+
+```{r DuckDBGRanges-from-gr, eval=FALSE}
+# Convert in-memory GRanges to DuckDB-backed
+gr_path2 <- tempfile(fileext = ".parquet")
+arrow::write_parquet(as.data.frame(gr), gr_path2)
+gr_ddb2 <- DuckDBGRanges(gr_path2, ...)
+```
+
+
+## Accessors
+
+*DuckDBGRanges* provides all standard GRanges accessors:
+
+### Genomic Coordinates
+
+```{r DuckDBGRanges-coords}
+# Sequence names
+seqnames(gr_ddb)
+
+# Start positions
+start(gr_ddb)
+
+# End positions
+end(gr_ddb)
+
+# Widths
+width(gr_ddb)
+
+# Strand
+strand(gr_ddb)
+
+# Combined ranges
+ranges(gr_ddb)
+```
+
+### Metadata
+
+```{r DuckDBGRanges-metadata}
+# Metadata columns
+mcols(gr_ddb)
+
+# Individual metadata column
+gr_ddb$gene_id
+
+# Sequence information
+seqinfo(gr_ddb)
+```
+
+### Length and Names
+
+```{r DuckDBGRanges-length}
+# Number of ranges
+length(gr_ddb)
+
+# Range names (if any)
+names(gr_ddb)
+```
+
+
+## Subsetting
+
+*DuckDBGRanges* supports all standard subsetting operations:
+
+### By Index
+
+```{r DuckDBGRanges-subset-index}
+# First 3 ranges
+gr_ddb[1:3]
+
+# Specific ranges
+gr_ddb[c(1, 3, 5)]
+```
+
+### By Logical Vector
+
+```{r DuckDBGRanges-subset-logical}
+# Ranges on chr1
+gr_ddb[seqnames(gr_ddb) == "chr1"]
+
+# Ranges with score > 15
+gr_ddb[gr_ddb$score > 15]
+
+# Positive strand ranges
+gr_ddb[strand(gr_ddb) == "+"]
+```
+
+### By Overlaps
+
+```{r DuckDBGRanges-subset-overlaps}
+# Define query region
+query <- GRanges("chr1:150-250")
+
+# Subset to overlapping ranges
+gr_ddb[gr_ddb %over% query]
+```
+
+
+# Range Operations
+
+## Intra-Range Operations
+
+Operations that modify ranges in place:
+
+### shift()
+
+```{r shift}
+# Shift all ranges by 50bp
+shifted <- shift(gr_ddb, 50)
+start(shifted)
+```
+
+### resize()
+
+```{r resize}
+# Resize to 100bp from start
+resized <- resize(gr_ddb, width = 100, fix = "start")
+width(resized)
+```
+
+### flank()
+
+```{r flank}
+# Get 50bp upstream flanks
+upstream <- flank(gr_ddb, width = 50, start = TRUE)
+upstream
+```
+
+### promoters()
+
+```{r promoters}
+# Get promoter regions (2kb upstream, 200bp downstream)
+proms <- promoters(gr_ddb, upstream = 2000, downstream = 200)
+width(proms)
+```
+
+### restrict()
+
+```{r restrict}
+# Restrict to chr1:100-300
+restricted <- restrict(gr_ddb, start = 100, end = 300)
+restricted
+```
+
+### narrow()
+
+```{r narrow}
+# Narrow to middle 50bp
+narrowed <- narrow(gr_ddb, start = 25, end = -25)
+width(narrowed)
+```
+
+
+## Inter-Range Operations
+
+Operations between multiple ranges:
+
+### reduce()
+
+```{r reduce}
+# Merge overlapping ranges
+reduced <- reduce(gr_ddb)
+reduced
+```
+
+### gaps()
+
+```{r gaps}
+# Find gaps between ranges
+gaps_gr <- gaps(gr_ddb)
+gaps_gr
+```
+
+### disjoin()
+
+```{r disjoin}
+# Create disjoint ranges
+disjoined <- disjoin(gr_ddb)
+disjoined
+```
+
+
+## Between-Range Operations
+
+Operations between two GRanges objects:
+
+### findOverlaps()
+
+The most important operation for genomic analyses:
+
+```{r findOverlaps}
+# Create second set of ranges
+gr2 <- GRanges(
+    seqnames = "chr1",
+    ranges = IRanges(start = c(120, 280), end = c(180, 320)),
+    strand = "*"
+)
+
+gr2_path <- tempfile(fileext = ".parquet")
+gr2_df <- as.data.frame(gr2)
+gr2_df$range_id <- paste0("range", 1:nrow(gr2_df))
+arrow::write_parquet(gr2_df, gr2_path)
+gr2_ddb <- DuckDBGRanges(gr2_path,
+                         seqnames = "seqnames",
+                         start = "start",
+                         end = "end",
+                         strand = "strand",
+                         keycol = list(range_id = gr2_df$range_id))
+
+# Find overlaps
+hits <- findOverlaps(gr_ddb, gr2_ddb)
+hits
+```
+
+This translates to an efficient SQL JOIN with range predicates.
+
+### countOverlaps()
+
+```{r countOverlaps}
+# Count overlaps for each range
+counts <- countOverlaps(gr_ddb, gr2_ddb)
+counts
+```
+
+### overlapsAny()
+
+```{r overlapsAny}
+# Check if each range has any overlap
+any_overlap <- overlapsAny(gr_ddb, gr2_ddb)
+any_overlap
+```
+
+### subsetByOverlaps()
+
+```{r subsetByOverlaps}
+# Subset to ranges with overlaps
+overlapping <- subsetByOverlaps(gr_ddb, gr2_ddb)
+overlapping
+```
+
+
+## Distance Operations
+
+### distance()
+
+```{r distance}
+# Distance between corresponding ranges
+dist <- distance(gr_ddb[1:2], gr2_ddb[1:2])
+dist
+```
+
+### distanceToNearest()
+
+```{r distanceToNearest}
+# Find nearest range and distance
+nearest <- distanceToNearest(gr_ddb, gr2_ddb)
+nearest
+```
+
+
+## Set Operations
+
+### union()
+
+```{r union}
+# Union of ranges (like reduce on combined)
+union_gr <- union(gr_ddb[1:2], gr_ddb[3:4])
+union_gr
+```
+
+### intersect()
+
+```{r intersect}
+# Intersection of overlapping ranges
+intersect_gr <- intersect(gr_ddb[1:2], gr_ddb[2:3])
+intersect_gr
+```
+
+### setdiff()
+
+```{r setdiff}
+# Set difference
+setdiff_gr <- setdiff(gr_ddb[1:3], gr_ddb[2:4])
+setdiff_gr
+```
+
+
+# The DuckDBGRangesList Class
+
+## Class Structure
+
+*DuckDBGRangesList* extends *GRangesList* and stores grouped ranges using
+DuckDB's LIST[] columns:
+
+```{r DuckDBGRangesList-class}
+showClass("DuckDBGRangesList")
+```
+
+### Slots
+
+**frame** (*DuckDBDataFrame*)
+: A DuckDBDataFrame where genomic coordinate columns (seqnames, start, end,
+  width, strand) are LIST[] columns. Each row represents a group.
+
+**seqinfo** (*Seqinfo*)
+: Sequence information shared across all groups.
+
+**elementMetadata** (*DuckDBDataFrame* or NULL)
+: Per-group metadata (not per-range metadata).
+
+
+## Construction
+
+### From Parquet with LIST[] Columns
+
+```{r DuckDBGRangesList-construct}
+# Create grouped ranges data
+grl_data <- data.frame(
+    transcript_id = c("ENST001", "ENST002", "ENST003"),
+    gene_id = c("GENE1", "GENE2", "GENE1"),
+    seqnames = I(list(
+        rep("chr1", 3),
+        rep("chr2", 2),
+        c("chr1", "chr1")
+    )),
+    start = I(list(
+        c(100L, 200L, 300L),
+        c(150L, 250L),
+        c(400L, 500L)
+    )),
+    width = I(list(
+        c(50L, 75L, 60L),
+        c(80L, 45L),
+        c(55L, 70L)
+    )),
+    strand = I(list(
+        c("+", "-", "+"),
+        c("-", "+"),
+        c("+", "+")
+    )),
+    score = c(0.8, 0.6, 0.9)
+)
+
+grl_path <- tempfile(fileext = ".parquet")
+arrow::write_parquet(grl_data, grl_path)
+
+# Create DuckDBGRangesList
+grl_ddb <- DuckDBGRangesList(grl_path,
+                             seqnames = "seqnames",
+                             start = "start",
+                             width = "width",
+                             strand = "strand",
+                             mcols = c("gene_id", "score"),
+                             keycol = list(transcript_id = grl_data$transcript_id))
+grl_ddb
+```
+
+
+## List Operations
+
+*DuckDBGRangesList* supports all GRangesList operations:
+
+### Element Access
+
+```{r DuckDBGRangesList-access}
+# Number of groups
+length(grl_ddb)
+
+# Number of ranges per group
+elementNROWS(grl_ddb)
+
+# Extract single group (returns GRanges)
+grl_ddb[[1]]
+
+# Extract multiple groups (returns GRangesList)
+grl_ddb[1:2]
+```
+
+### Metadata
+
+```{r DuckDBGRangesList-metadata}
+# Per-group metadata
+mcols(grl_ddb)
+
+# Group names
+names(grl_ddb)
+```
+
+
+# SQL Translation Details
+
+## How Range Operations Become SQL
+
+Understanding the SQL translation helps optimize queries:
+
+### Simple Filtering
+
+```{r sql-filtering, eval=FALSE}
+# R code
+gr_chr1 <- gr_ddb[seqnames(gr_ddb) == "chr1"]
+
+# Becomes SQL
+# SELECT * FROM ranges WHERE seqnames = 'chr1'
+```
+
+### Range Predicates
+
+```{r sql-range-predicates, eval=FALSE}
+# R code
+wide_ranges <- gr_ddb[width(gr_ddb) > 100]
+
+# Becomes SQL
+# SELECT * FROM ranges WHERE (end - start + 1) > 100
+```
+
+### Overlap Queries
+
+```{r sql-overlaps, eval=FALSE}
+# R code
+hits <- findOverlaps(gr_ddb, gr2_ddb)
+
+# Becomes SQL
+# SELECT a.row_number, b.row_number
+# FROM ranges_a a
+# INNER JOIN ranges_b b
+#   ON a.seqnames = b.seqnames
+#   AND a.start <= b.end
+#   AND a.end >= b.start
+# WHERE (a.strand = b.strand OR a.strand = '*' OR b.strand = '*')
+```
+
+
+## Optimization Strategies
+
+### Use Parquet Statistics
+
+Parquet files store min/max statistics per column chunk. DuckDB uses these
+for predicate pushdown:
+
+```{r parquet-stats, eval=FALSE}
+# This query only reads relevant chunks
+chr22_ranges <- gr_ddb[seqnames(gr_ddb) == "chr22"]
+# DuckDB skips chunks where seqnames != "chr22"
+```
+
+### Leverage Partitioning
+
+For very large datasets, partition by chromosome:
+
+```{r partitioning, eval=FALSE}
+# Write partitioned by chromosome
+arrow::write_dataset(gr_df, "ranges_partitioned",
+                     partitioning = "seqnames")
+
+# Queries on single chromosome are very fast
+gr_chr1 <- DuckDBGRanges("ranges_partitioned", ...)
+gr_chr1_subset <- gr_chr1[seqnames(gr_chr1) == "chr1"]
+# Only reads chr1 partition
+```
+
+### Filter Before Expensive Operations
+
+```{r filter-early, eval=FALSE}
+# Good: Filter first
+gr_subset <- gr_ddb[seqnames(gr_ddb) == "chr1"]
+hits <- findOverlaps(gr_subset, gr2_ddb)
+
+# Less efficient: Find overlaps on full dataset
+hits_all <- findOverlaps(gr_ddb, gr2_ddb)
+hits_chr1 <- hits_all[seqnames(gr_ddb)[queryHits(hits_all)] == "chr1", ]
+```
+
+
+# Advanced Topics
+
+## Seqinfo Management
+
+*DuckDBGRanges* fully supports Seqinfo:
+
+```{r seqinfo}
+# Get seqinfo
+seqinfo(gr_ddb)
+
+# Set sequence lengths
+seqlengths(gr_ddb) <- c(chr1 = 248956422, chr2 = 242193529)
+seqinfo(gr_ddb)
+
+# Set genome
+genome(gr_ddb) <- "hg38"
+seqinfo(gr_ddb)
+```
+
+
+## Strand-Specific Operations
+
+Many operations respect strand:
+
+```{r strand-ops}
+# Upstream flanks respect strand
+upstream <- flank(gr_ddb, width = 50, start = TRUE)
+
+# Positive strand: flank is to the left
+# Negative strand: flank is to the right
+# Unstranded: flank is to the left
+```
+
+
+## Metadata Propagation
+
+Metadata columns propagate through operations:
+
+```{r metadata-propagation}
+# Metadata preserved in subsetting
+subset_gr <- gr_ddb[1:3]
+mcols(subset_gr)
+
+# Metadata preserved in range operations
+shifted_gr <- shift(gr_ddb, 100)
+mcols(shifted_gr)
+```
+
+
+# Use Cases
+
+## Variant Analysis
+
+Large variant databases (gnomAD, ClinVar) benefit from DuckDB backend:
+
+```{r use-case-variants, eval=FALSE}
+# Load gnomAD variants (hundreds of millions)
+gnomad <- DuckDBGRanges("gnomad.parquet",
+                        seqnames = "chrom",
+                        start = "pos",
+                        end = "pos",  # SNVs have width = 1
+                        strand = "*",
+                        mcols = c("ref", "alt", "af", "an", "ac"))
+
+# Find variants in gene region
+gene_region <- GRanges("chr1:100000-200000")
+gene_variants <- subsetByOverlaps(gnomad, gene_region)
+
+# Filter by allele frequency
+common_variants <- gene_variants[gene_variants$af > 0.01]
+```
+
+
+## Gene Annotation
+
+Comprehensive gene models with millions of exons:
+
+```{r use-case-genes, eval=FALSE}
+# Load GENCODE annotations
+gencode <- DuckDBGRangesList("gencode.parquet",
+                             seqnames = "seqnames",
+                             start = "start",
+                             end = "end",
+                             strand = "strand",
+                             mcols = c("gene_id", "gene_name", "gene_type"),
+                             keycol = "transcript_id")
+
+# Find genes overlapping region
+region <- GRanges("chr1:1000000-2000000")
+overlapping_genes <- subsetByOverlaps(gencode, region)
+
+# Get protein-coding genes
+protein_coding <- gencode[gencode$gene_type == "protein_coding"]
+```
+
+
+## scATAC-seq Peak Analysis
+
+Single-cell chromatin accessibility with hundreds of thousands of peaks:
+
+```{r use-case-scatac, eval=FALSE}
+# Load peak calls
+peaks <- DuckDBGRanges("peaks.parquet",
+                       seqnames = "chrom",
+                       start = "start",
+                       end = "end",
+                       strand = "*",
+                       mcols = c("peak_id", "score", "pvalue"))
+
+# Find peaks near genes
+tss <- promoters(gencode, upstream = 0, downstream = 1)
+tss_peaks <- subsetByOverlaps(peaks, tss)
+
+# Annotate peaks with nearest gene
+nearest_genes <- nearest(peaks, tss)
+```
+
+
+## Regulatory Element Analysis
+
+Genome-wide regulatory annotations:
+
+```{r use-case-regulatory, eval=FALSE}
+# Load ENCODE regulatory elements
+encode <- DuckDBGRanges("encode_elements.parquet",
+                        seqnames = "chrom",
+                        start = "start",
+                        end = "end",
+                        strand = "*",
+                        mcols = c("element_type", "cell_type", "score"))
+
+# Find enhancers near gene
+gene_region <- GRanges("chr1:1000000-2000000")
+nearby_enhancers <- encode[encode$element_type == "enhancer" &
+                           overlapsAny(encode, gene_region + 1e6)]
+```
+
+
+# Performance Considerations
+
+## When to Use DuckDBGRanges
+
+**Advantages**:
+- Genomic datasets larger than RAM
+- Millions of ranges (variants, peaks, annotations)
+- Frequent filtering and subsetting
+- SQL-based range queries
+- Parquet files already on disk
+
+**Limitations**:
+- Random access slower than in-memory
+- Some operations require materialization
+- Overhead for small datasets (< 100K ranges)
+
+
+## Optimization Tips
+
+1. **Partition by chromosome**: Enables efficient per-chromosome queries
+2. **Use Parquet statistics**: Filter predicates leverage min/max stats
+3. **Filter early**: Reduce dataset size before expensive operations
+4. **Leverage strand**: Strand-specific queries are more efficient
+5. **Batch operations**: Multiple operations on same data reuse queries
+
+
+## Benchmarking
+
+```{r benchmark, eval=FALSE}
+library(microbenchmark)
+
+# Small dataset (in-memory faster)
+small_gr <- gr_ddb[1:1000]
+small_mem <- as(small_gr, "GRanges")
+
+microbenchmark(
+    duckdb = findOverlaps(small_gr, small_gr),
+    memory = findOverlaps(small_mem, small_mem),
+    times = 10
+)
+
+# Large dataset (DuckDB faster)
+large_gr <- DuckDBGRanges("large_variants.parquet", ...)
+# large_mem <- as(large_gr, "GRanges")  # Won't fit in RAM!
+
+system.time(findOverlaps(large_gr, large_gr))  # Efficient SQL JOIN
+```
+
+
+# Session Information
+
+```{r sessioninfo}
+sessionInfo()
+```

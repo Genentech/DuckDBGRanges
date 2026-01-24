@@ -85,7 +85,6 @@ NULL
 #' @export
 #' @importFrom DBI dbQuoteIdentifier dbQuoteLiteral
 #' @importFrom dplyr collect count group_by mutate sql summarize
-#' @importFrom BiocGenerics dbconn
 #' @importFrom DuckDBDataFrame DuckDBDataFrame tblconn
 #' @importFrom Seqinfo seqinfo
 #' @importFrom S4Vectors make_zero_col_DFrame new2

@@ -12,6 +12,8 @@
 \alias{names,DuckDBGRanges-method}
 \alias{seqinfo,DuckDBGRanges-method}
 \alias{seqnames,DuckDBGRanges-method}
+\alias{seqlengths<-,DuckDBGRanges-method}
+\alias{genome<-,DuckDBGRanges-method}
 \alias{start,DuckDBGRanges-method}
 \alias{end,DuckDBGRanges-method}
 \alias{width,DuckDBGRanges-method}

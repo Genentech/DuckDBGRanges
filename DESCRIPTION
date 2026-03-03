@@ -19,6 +19,7 @@ License: MIT + file LICENSE
 Depends:
     R (>= 4.3.0),
     methods,
+    stats,
     DuckDBDataFrame,
     GenomicRanges
 Imports:

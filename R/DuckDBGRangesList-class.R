@@ -174,47 +174,46 @@
 #'                             keycol = list(group = c("gr1", "gr2", "gr3", "gr4")))
 #' grlist
 #'
-#' @aliases
-#' DuckDBGRangesList-class
+#' @aliases DuckDBGRangesList-class
 #'
-#' updateObject,DuckDBGRangesList-method
+#' @aliases updateObject,DuckDBGRangesList-method
 #'
-#' dbconn,DuckDBGRangesList-method
-#' tblconn,DuckDBGRangesList-method
-#' .keycols,DuckDBGRangesList-method
-#' .has_row_number,DuckDBGRangesList-method
-#' dimtbls,DuckDBGRangesList-method
-#' dimtbls<-,DuckDBGRangesList-method
-#' length,DuckDBGRangesList-method
-#' names,DuckDBGRangesList-method
-#' names<-,DuckDBGRangesList-method
-#' seqinfo,DuckDBGRangesList-method
-#' seqnames,DuckDBGRangesList-method
-#' seqlengths<-,DuckDBGRangesList-method
-#' genome<-,DuckDBGRangesList-method
-#' start,DuckDBGRangesList-method
-#' end,DuckDBGRangesList-method
-#' width,DuckDBGRangesList-method
-#' strand,DuckDBGRangesList-method
-#' elementNROWS,DuckDBGRangesList-method
-#' elementMetadata,DuckDBGRangesList-method
-#' elementMetadata<-,DuckDBGRangesList-method
+#' @aliases dbconn,DuckDBGRangesList-method
+#' @aliases tblconn,DuckDBGRangesList-method
+#' @aliases .keycols,DuckDBGRangesList-method
+#' @aliases .has_row_number,DuckDBGRangesList-method
+#' @aliases dimtbls,DuckDBGRangesList-method
+#' @aliases dimtbls<-,DuckDBGRangesList-method
+#' @aliases length,DuckDBGRangesList-method
+#' @aliases names,DuckDBGRangesList-method
+#' @aliases names<-,DuckDBGRangesList-method
+#' @aliases seqinfo,DuckDBGRangesList-method
+#' @aliases seqnames,DuckDBGRangesList-method
+#' @aliases seqlengths<-,DuckDBGRangesList-method
+#' @aliases genome<-,DuckDBGRangesList-method
+#' @aliases start,DuckDBGRangesList-method
+#' @aliases end,DuckDBGRangesList-method
+#' @aliases width,DuckDBGRangesList-method
+#' @aliases strand,DuckDBGRangesList-method
+#' @aliases elementNROWS,DuckDBGRangesList-method
+#' @aliases elementMetadata,DuckDBGRangesList-method
+#' @aliases elementMetadata<-,DuckDBGRangesList-method
 #'
-#' DuckDBGRangesList
-#' split,DuckDBGRanges,DuckDBColumn-method
+#' @aliases DuckDBGRangesList
+#' @aliases split,DuckDBGRanges,DuckDBColumn-method
 #'
-#' unlist,DuckDBGRangesList-method
+#' @aliases unlist,DuckDBGRangesList-method
 #'
-#' extractROWS,DuckDBGRangesList,ANY-method
-#' getListElement,DuckDBGRangesList-method
-#' head,DuckDBGRangesList-method
-#' tail,DuckDBGRangesList-method
+#' @aliases extractROWS,DuckDBGRangesList,ANY-method
+#' @aliases getListElement,DuckDBGRangesList-method
+#' @aliases head,DuckDBGRangesList-method
+#' @aliases tail,DuckDBGRangesList-method
 #'
-#' coerce,DuckDBGRangesList,DuckDBDataFrame-method
-#' coerce,DuckDBGRangesList,CompressedGRangesList-method
-#' realize,DuckDBGRangesList-method
+#' @aliases coerce,DuckDBGRangesList,DuckDBDataFrame-method
+#' @aliases coerce,DuckDBGRangesList,CompressedGRangesList-method
+#' @aliases realize,DuckDBGRangesList-method
 #'
-#' show,DuckDBGRangesList-method
+#' @aliases show,DuckDBGRangesList-method
 #'
 #' @seealso
 #' \itemize{

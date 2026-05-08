@@ -190,42 +190,41 @@
 #'                     keycol = "id")
 #' gr
 #'
-#' @aliases
-#' DuckDBGRanges-class
+#' @aliases DuckDBGRanges-class
 #'
-#' dbconn,DuckDBGRanges-method
-#' tblconn,DuckDBGRanges-method
-#' .keycols,DuckDBGRanges-method
-#' .has_row_number,DuckDBGRanges-method
-#' dimtbls,DuckDBGRanges-method
-#' dimtbls<-,DuckDBGRanges-method
-#' length,DuckDBGRanges-method
-#' names,DuckDBGRanges-method
-#' seqinfo,DuckDBGRanges-method
-#' seqnames,DuckDBGRanges-method
-#' seqlengths<-,DuckDBGRanges-method
-#' genome<-,DuckDBGRanges-method
-#' start,DuckDBGRanges-method
-#' end,DuckDBGRanges-method
-#' width,DuckDBGRanges-method
-#' strand,DuckDBGRanges-method
-#' ranges,DuckDBGRanges-method
-#' elementMetadata,DuckDBGRanges-method
-#' elementMetadata<-,DuckDBGRanges-method
+#' @aliases dbconn,DuckDBGRanges-method
+#' @aliases tblconn,DuckDBGRanges-method
+#' @aliases .keycols,DuckDBGRanges-method
+#' @aliases .has_row_number,DuckDBGRanges-method
+#' @aliases dimtbls,DuckDBGRanges-method
+#' @aliases dimtbls<-,DuckDBGRanges-method
+#' @aliases length,DuckDBGRanges-method
+#' @aliases names,DuckDBGRanges-method
+#' @aliases seqinfo,DuckDBGRanges-method
+#' @aliases seqnames,DuckDBGRanges-method
+#' @aliases seqlengths<-,DuckDBGRanges-method
+#' @aliases genome<-,DuckDBGRanges-method
+#' @aliases start,DuckDBGRanges-method
+#' @aliases end,DuckDBGRanges-method
+#' @aliases width,DuckDBGRanges-method
+#' @aliases strand,DuckDBGRanges-method
+#' @aliases ranges,DuckDBGRanges-method
+#' @aliases elementMetadata,DuckDBGRanges-method
+#' @aliases elementMetadata<-,DuckDBGRanges-method
 #'
-#' DuckDBGRanges
+#' @aliases DuckDBGRanges
 #'
-#' extractROWS,DuckDBGRanges,ANY-method
-#' [,DuckDBGRanges,ANY,ANY,ANY-method
-#' head,DuckDBGRanges-method
-#' tail,DuckDBGRanges-method
+#' @aliases extractROWS,DuckDBGRanges,ANY-method
+#' @aliases [,DuckDBGRanges,ANY,ANY,ANY-method
+#' @aliases head,DuckDBGRanges-method
+#' @aliases tail,DuckDBGRanges-method
 #'
-#' coerce,DuckDBGRanges,DuckDBDataFrame-method
-#' as.data.frame,DuckDBGRanges-method
-#' coerce,DuckDBGRanges,GRanges-method
-#' realize,DuckDBGRanges-method
+#' @aliases coerce,DuckDBGRanges,DuckDBDataFrame-method
+#' @aliases as.data.frame,DuckDBGRanges-method
+#' @aliases coerce,DuckDBGRanges,GRanges-method
+#' @aliases realize,DuckDBGRanges-method
 #'
-#' show,DuckDBGRanges-method
+#' @aliases show,DuckDBGRanges-method
 #'
 #' @seealso
 #' \itemize{

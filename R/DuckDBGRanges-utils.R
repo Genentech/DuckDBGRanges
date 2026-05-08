@@ -331,79 +331,78 @@
 #' # Subset by overlaps (uses overlapsAny internally)
 #' subset <- subsetByOverlaps(query, subject)
 #'
-#' @aliases
-#' findOverlaps,GRanges,DuckDBGRanges-method
-#' findOverlaps,DuckDBGRanges,DuckDBGRanges-method
-#' findOverlaps,DuckDBGRanges,GRanges-method
-#' countOverlaps,GRanges,DuckDBGRanges-method
-#' countOverlaps,DuckDBGRanges,DuckDBGRanges-method
-#' countOverlaps,DuckDBGRanges,GRanges-method
-#' overlapsAny,GRanges,DuckDBGRanges-method
-#' overlapsAny,DuckDBGRanges,DuckDBGRanges-method
-#' overlapsAny,DuckDBGRanges,GRanges-method
-#' subsetByOverlaps,DuckDBGRanges,DuckDBGRanges-method
-#' subsetByOverlaps,DuckDBGRanges,GRanges-method
-#' shift,DuckDBGRanges-method
-#' narrow,DuckDBGRanges-method
-#' resize,DuckDBGRanges-method
-#' flank,DuckDBGRanges-method
-#' promoters,DuckDBGRanges-method
-#' terminators,DuckDBGRanges-method
-#' range,DuckDBGRanges-method
-#' reduce,DuckDBGRanges-method
-#' gaps,DuckDBGRanges-method
-#' disjoin,DuckDBGRanges-method
-#' union,DuckDBGRanges,DuckDBGRanges-method
-#' union,DuckDBGRanges,GRanges-method
-#' union,GRanges,DuckDBGRanges-method
-#' intersect,DuckDBGRanges,DuckDBGRanges-method
-#' intersect,DuckDBGRanges,GRanges-method
-#' intersect,GRanges,DuckDBGRanges-method
-#' setdiff,DuckDBGRanges,DuckDBGRanges-method
-#' setdiff,DuckDBGRanges,GRanges-method
-#' setdiff,GRanges,DuckDBGRanges-method
-#' duplicated,DuckDBGRanges-method
-#' unique,DuckDBGRanges-method
-#' match,DuckDBGRanges,DuckDBGRanges-method
-#' punion,DuckDBGRanges,DuckDBGRanges-method
-#' punion,DuckDBGRanges,GRanges-method
-#' punion,GRanges,DuckDBGRanges-method
-#' pintersect,DuckDBGRanges,DuckDBGRanges-method
-#' pintersect,DuckDBGRanges,GRanges-method
-#' pintersect,GRanges,DuckDBGRanges-method
-#' psetdiff,DuckDBGRanges,DuckDBGRanges-method
-#' psetdiff,DuckDBGRanges,GRanges-method
-#' psetdiff,GRanges,DuckDBGRanges-method
-#' distance,DuckDBGRanges,DuckDBGRanges-method
-#' distance,DuckDBGRanges,GRanges-method
-#' distance,GRanges,DuckDBGRanges-method
-#' sort,DuckDBGRanges-method
-#' order,DuckDBGRanges-method
-#' is.unsorted,DuckDBGRanges-method
-#' rank,DuckDBGRanges-method
-#' trim,DuckDBGRanges-method
-#' restrict,DuckDBGRanges-method
-#' precede,DuckDBGRanges,DuckDBGRanges-method
-#' precede,DuckDBGRanges,missing-method
-#' precede,DuckDBGRanges,GRanges-method
-#' precede,GRanges,DuckDBGRanges-method
-#' follow,DuckDBGRanges,DuckDBGRanges-method
-#' follow,DuckDBGRanges,missing-method
-#' follow,DuckDBGRanges,GRanges-method
-#' follow,GRanges,DuckDBGRanges-method
-#' nearest,DuckDBGRanges,DuckDBGRanges-method
-#' nearest,DuckDBGRanges,missing-method
-#' nearest,DuckDBGRanges,GRanges-method
-#' nearest,GRanges,DuckDBGRanges-method
-#' distanceToNearest,DuckDBGRanges,DuckDBGRanges-method
-#' distanceToNearest,DuckDBGRanges,missing-method
-#' distanceToNearest,DuckDBGRanges,GRanges-method
-#' distanceToNearest,GRanges,DuckDBGRanges-method
-#' tile,DuckDBGRanges-method
-#' slidingWindows,DuckDBGRanges-method
-#' pgap,DuckDBGRanges,DuckDBGRanges-method
-#' pgap,DuckDBGRanges,GRanges-method
-#' pgap,GRanges,DuckDBGRanges-method
+#' @aliases findOverlaps,GRanges,DuckDBGRanges-method
+#' @aliases findOverlaps,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases findOverlaps,DuckDBGRanges,GRanges-method
+#' @aliases countOverlaps,GRanges,DuckDBGRanges-method
+#' @aliases countOverlaps,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases countOverlaps,DuckDBGRanges,GRanges-method
+#' @aliases overlapsAny,GRanges,DuckDBGRanges-method
+#' @aliases overlapsAny,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases overlapsAny,DuckDBGRanges,GRanges-method
+#' @aliases subsetByOverlaps,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases subsetByOverlaps,DuckDBGRanges,GRanges-method
+#' @aliases shift,DuckDBGRanges-method
+#' @aliases narrow,DuckDBGRanges-method
+#' @aliases resize,DuckDBGRanges-method
+#' @aliases flank,DuckDBGRanges-method
+#' @aliases promoters,DuckDBGRanges-method
+#' @aliases terminators,DuckDBGRanges-method
+#' @aliases range,DuckDBGRanges-method
+#' @aliases reduce,DuckDBGRanges-method
+#' @aliases gaps,DuckDBGRanges-method
+#' @aliases disjoin,DuckDBGRanges-method
+#' @aliases union,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases union,DuckDBGRanges,GRanges-method
+#' @aliases union,GRanges,DuckDBGRanges-method
+#' @aliases intersect,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases intersect,DuckDBGRanges,GRanges-method
+#' @aliases intersect,GRanges,DuckDBGRanges-method
+#' @aliases setdiff,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases setdiff,DuckDBGRanges,GRanges-method
+#' @aliases setdiff,GRanges,DuckDBGRanges-method
+#' @aliases duplicated,DuckDBGRanges-method
+#' @aliases unique,DuckDBGRanges-method
+#' @aliases match,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases punion,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases punion,DuckDBGRanges,GRanges-method
+#' @aliases punion,GRanges,DuckDBGRanges-method
+#' @aliases pintersect,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases pintersect,DuckDBGRanges,GRanges-method
+#' @aliases pintersect,GRanges,DuckDBGRanges-method
+#' @aliases psetdiff,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases psetdiff,DuckDBGRanges,GRanges-method
+#' @aliases psetdiff,GRanges,DuckDBGRanges-method
+#' @aliases distance,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases distance,DuckDBGRanges,GRanges-method
+#' @aliases distance,GRanges,DuckDBGRanges-method
+#' @aliases sort,DuckDBGRanges-method
+#' @aliases order,DuckDBGRanges-method
+#' @aliases is.unsorted,DuckDBGRanges-method
+#' @aliases rank,DuckDBGRanges-method
+#' @aliases trim,DuckDBGRanges-method
+#' @aliases restrict,DuckDBGRanges-method
+#' @aliases precede,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases precede,DuckDBGRanges,missing-method
+#' @aliases precede,DuckDBGRanges,GRanges-method
+#' @aliases precede,GRanges,DuckDBGRanges-method
+#' @aliases follow,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases follow,DuckDBGRanges,missing-method
+#' @aliases follow,DuckDBGRanges,GRanges-method
+#' @aliases follow,GRanges,DuckDBGRanges-method
+#' @aliases nearest,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases nearest,DuckDBGRanges,missing-method
+#' @aliases nearest,DuckDBGRanges,GRanges-method
+#' @aliases nearest,GRanges,DuckDBGRanges-method
+#' @aliases distanceToNearest,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases distanceToNearest,DuckDBGRanges,missing-method
+#' @aliases distanceToNearest,DuckDBGRanges,GRanges-method
+#' @aliases distanceToNearest,GRanges,DuckDBGRanges-method
+#' @aliases tile,DuckDBGRanges-method
+#' @aliases slidingWindows,DuckDBGRanges-method
+#' @aliases pgap,DuckDBGRanges,DuckDBGRanges-method
+#' @aliases pgap,DuckDBGRanges,GRanges-method
+#' @aliases pgap,GRanges,DuckDBGRanges-method
 #'
 #' @include DuckDBGRanges-class.R
 #'

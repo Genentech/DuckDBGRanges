@@ -1,6 +1,6 @@
 Package: DuckDBGRanges
-Version: 0.9.1
-Date: 2026-05-08
+Version: 0.9.2
+Date: 2026-05-31
 Title: DuckDB-Backed GenomicRanges Implementation
 Description:
     Provides DuckDB-backed implementations of GenomicRanges data structures
@@ -15,7 +15,7 @@ Authors@R:
         person("Patrick", "Aboyoun", role=c("aut", "cre"), email="aboyounp@gene.com"),
         person("Genentech, Inc.", role="cph")
     )
-License: MIT + file LICENSE
+License: Apache License 2.0
 Depends:
     R (>= 4.3.0),
     methods,

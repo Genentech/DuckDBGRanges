@@ -1,0 +1,221 @@
+---
+title: "Introduction to DuckDBGRanges"
+author:
+- name: Patrick Aboyoun
+  email: aboyounp@gene.com
+  affiliation: Genentech, Inc.
+date: "Compiled: `r BiocStyle::doc_date()`; Modified: 6 July 2026"
+package: DuckDBGRanges
+vignette: >
+  %\VignetteIndexEntry{1. Introduction to DuckDBGRanges}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+output:
+  BiocStyle::html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>",
+                      error = FALSE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+Genomic workflows routinely produce interval sets that are awkward to hold in
+memory: a gnomAD-scale variant catalogue is hundreds of millions of positions, a
+multi-sample scATAC-seq study is millions of peaks, a comprehensive gene model is
+millions of exons. Loading the whole set into an R session --- alongside the
+intermediate objects an analysis creates --- is wasteful when a workflow only ever
+touches a region, a chromosome, or the ranges passing a metadata filter.
+
+`r Biocpkg("GenomicRanges")` is the standard Bioconductor representation for such
+data, and its API --- `seqnames()`, `start()`, `restrict()`, `findOverlaps()` ---
+is what most genomic code is written against. What varies is *where the data
+lives*: an ordinary `GRanges` holds every range in memory.
+
+`r Biocpkg("DuckDBGRanges")` provides a `GRanges` (and `GRangesList`) backed by
+columnar **Parquet** queried through [DuckDB](https://duckdb.org). It exposes the
+full `r Biocpkg("GenomicRanges")` API, but the coordinates stay **on disk** and
+operations are recorded as lazy SQL queries: you can filter by region, restrict,
+subset, and compose pipelines **without loading the ranges into memory**. The R
+object stays a small, constant size (~175 KB) whether it fronts a thousand ranges
+or a hundred million.
+
+It builds on `r Biocpkg("DuckDBDataFrame")` (the tabular foundation of the
+**BiocDuckDB** suite) and is designed for the *filter-first* shape of most genomic
+work: use DuckDB to cut a large interval set down to the ranges of interest, then
+materialize that manageable subset to an ordinary `GRanges` for the interval-tree
+operations R does best.
+
+This vignette is a practical introduction. Two companion vignettes go further:
+
+- *Benchmarking DuckDBGRanges* measures what the on-disk backend costs and buys,
+  against in-memory `GRanges`, on scATAC-seq and variant-scale data.
+- *Design and extension of DuckDBGRanges* documents the class structure and SQL
+  translation for developers.
+
+## Installation
+
+```{r install, eval=FALSE}
+if (!require("BiocManager"))
+    install.packages("BiocManager")
+BiocManager::install("DuckDBGRanges")
+```
+
+```{r load}
+library(DuckDBGRanges)
+library(GenomicRanges)
+```
+
+# Quick start
+
+A `DuckDBGRanges` is backed by a Parquet file with columns for the genomic
+coordinates. For a small example we build a `GRanges`, write it to Parquet with
+`r CRANpkg("arrow")`, and open it as a `DuckDBGRanges`.
+
+```{r quickstart-data}
+library(arrow)
+
+gr <- GRanges(
+    seqnames = rep(c("chr1", "chr2"), c(3, 2)),
+    ranges = IRanges(start = c(100, 200, 300, 150, 250),
+                     end   = c(150, 275, 360, 230, 295)),
+    strand  = c("+", "-", "+", "-", "+"),
+    gene_id = paste0("GENE", 1:5),
+    score   = c(10, 20, 15, 25, 18))
+
+gr_df <- as.data.frame(gr)
+gr_df$range_id <- paste0("range", seq_len(nrow(gr_df)))
+gr_path <- tempfile(fileext = ".parquet")
+write_parquet(gr_df, gr_path)
+```
+
+We construct the object by naming the coordinate columns; extra columns become
+metadata columns (`mcols`). The `keycol` argument names the column that identifies
+each range.
+
+```{r quickstart-construct}
+gr_ddb <- DuckDBGRanges(gr_path,
+                        seqnames = "seqnames", start = "start",
+                        end = "end", strand = "strand",
+                        keycol = list(range_id = gr_df$range_id),
+                        mcols = c("gene_id", "score"))
+gr_ddb
+```
+
+It looks and behaves like a `GRanges`, but the ranges stay on disk:
+
+```{r quickstart-ops}
+length(gr_ddb)
+seqnames(gr_ddb)
+```
+
+# Working with a DuckDBGRanges
+
+## Accessors
+
+All the standard `GRanges` accessors work and return the same kinds of values,
+queried from disk on demand:
+
+```{r accessors}
+start(gr_ddb)
+width(gr_ddb)
+ranges(gr_ddb)
+gr_ddb$gene_id
+```
+
+## Subsetting
+
+Ranges can be selected by index, by a logical condition on a coordinate or
+metadata column (which becomes a SQL `WHERE` clause), or by overlap with a query
+region:
+
+```{r subset}
+gr_ddb[1:3]
+gr_ddb[seqnames(gr_ddb) == "chr1"]
+gr_ddb[gr_ddb$score > 15]
+gr_ddb[gr_ddb %over% GRanges("chr1:150-250")]
+```
+
+## Range operations
+
+The intra- and inter-range operations of `r Biocpkg("GenomicRanges")` are
+implemented as SQL, so the familiar functions work directly:
+
+```{r range-ops}
+shift(gr_ddb, 50L)
+restrict(gr_ddb, start = 200L, end = 300L)
+reduce(gr_ddb)
+```
+
+## Filter, then materialize
+
+The idiomatic workflow uses DuckDB to shrink a large set to the ranges of
+interest, then coerces to an ordinary `GRanges` for the interval-tree operations
+(`findOverlaps()`, `nearest()`) that in-memory algorithms do best:
+
+```{r hybrid}
+## lazy, on-disk filter down to a manageable subset...
+sub <- gr_ddb[seqnames(gr_ddb) == "chr1" & gr_ddb$score > 12]
+
+## ...then materialize the small result for overlap work
+sub_gr <- as(sub, "GRanges")
+class(sub_gr)
+findOverlaps(sub_gr, GRanges("chr1:100-320"))
+```
+
+# Grouped ranges: DuckDBGRangesList
+
+Grouped features (a transcript's exons, a gene's peaks) are held by a
+`DuckDBGRangesList`, which stores each group's coordinates as DuckDB `LIST[]`
+columns --- one row per group --- and behaves like a `GRangesList`:
+
+```{r grangeslist}
+grl_data <- data.frame(
+    transcript_id = c("ENST001", "ENST002"),
+    gene_id = c("GENE1", "GENE2"),
+    seqnames = I(list(rep("chr1", 3), rep("chr2", 2))),
+    start  = I(list(c(100L, 200L, 300L), c(150L, 250L))),
+    width  = I(list(c(50L, 75L, 60L),   c(80L, 45L))),
+    strand = I(list(c("+", "-", "+"),   c("-", "+"))))
+grl_path <- tempfile(fileext = ".parquet")
+write_parquet(grl_data, grl_path)
+
+grl_ddb <- DuckDBGRangesList(grl_path,
+                             seqnames = "seqnames", start = "start",
+                             width = "width", strand = "strand",
+                             mcols = "gene_id",
+                             keycol = list(transcript_id = grl_data$transcript_id))
+elementNROWS(grl_ddb)
+grl_ddb[[1]]
+```
+
+# When to use DuckDBGRanges
+
+A good fit when the interval set is **larger than memory** (or you want to keep
+memory free), when the workload is **filter-heavy** --- restricting to regions,
+chromosomes, or metadata thresholds before the expensive step --- or when the data
+already lives on disk as **Parquet** that other tools (Python, Julia, cloud query
+engines) can read. Because the R object is a constant ~175 KB, a `DuckDBGRanges`
+also lets you *reference* a huge annotation without paying for it until a query
+touches it.
+
+An in-memory `GRanges` remains preferable when the data fits comfortably in RAM,
+and for **overlap enumeration** --- `findOverlaps()`, `subsetByOverlaps()` ---
+where the in-memory interval trees are hard to beat. (Filtering and
+`distanceToNearest()`, by contrast, are faster on the DuckDB backend --- see the
+benchmarking vignette.) The two compose well: the *filter, then materialize*
+pattern above uses each where it is strongest.
+
+For a quantitative comparison see *Benchmarking DuckDBGRanges*; for the class
+structure and SQL translation see *Design and extension of DuckDBGRanges*.
+
+# Session information
+
+```{r sessioninfo}
+sessionInfo()
+```

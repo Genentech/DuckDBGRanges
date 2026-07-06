@@ -1,0 +1,212 @@
+---
+title: "Benchmarking DuckDBGRanges"
+author:
+- name: Patrick Aboyoun
+  email: aboyounp@gene.com
+  affiliation: Genentech, Inc.
+date: "Compiled: `r BiocStyle::doc_date()`; Modified: 6 July 2026"
+package: DuckDBGRanges
+vignette: >
+  %\VignetteIndexEntry{2. Benchmarking DuckDBGRanges}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+output:
+  BiocStyle::html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>",
+                      error = FALSE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+The *Introduction to DuckDBGRanges* vignette shows how a `DuckDBGRanges` behaves
+like an ordinary `GRanges` while keeping its data on disk. This vignette asks the
+follow-up question: **what does that cost, and what does it buy?** We compare the
+DuckDB backend against an in-memory `r Biocpkg("GenomicRanges")` object on two
+range-analysis scenarios at scale:
+
+1. **scATAC-seq peaks** --- a million peak-like intervals a few hundred bases wide,
+   the shape of multi-sample consensus peak sets;
+2. **variants** --- ten million SNV-like point positions, the shape of a large
+   variant catalogue.
+
+The headline results below were produced **offline** (see [Benchmark setup]) and
+are rendered here from a bundled results file, so this vignette builds quickly. The
+[A small, live comparison] section runs a miniature version at build time so you
+can see the mechanics end to end.
+
+The short version: **DuckDBGRanges wins decisively on memory and on the filtering
+that dominates the early stages of a workflow, while in-memory `GRanges` keeps its
+edge on the interval-tree operations** --- `findOverlaps()`, `subsetByOverlaps()`,
+`nearest()`. The two are complementary, which is why the idiomatic pattern is to
+*filter with DuckDB, then materialize to `GRanges`* for overlap work.
+
+# What DuckDBGRanges optimizes
+
+`r Biocpkg("DuckDBGRanges")` turns coordinate and metadata filters into SQL that
+DuckDB pushes into the Parquet reader --- so a region restriction reads only the
+matching row groups instead of scanning every range. Existing Bioconductor code
+picks this up automatically: calling `restrict()` on a `DuckDBGRanges` *is* a
+`WHERE` clause, and chained filters compose into a single lazy query.
+
+| Category | Operations | Backend that wins |
+|----------|------------|-------------------|
+| Memory footprint | the R object itself | **DuckDBGRanges** (constant ~175 KB) |
+| Coordinate / metadata filtering | `restrict`, logical `[`, pipelines | **DuckDBGRanges** (predicate pushdown) |
+| Nearest-feature distance | `distanceToNearest` | **DuckDBGRanges** (SQL aggregation) |
+| Inter-range transforms | `reduce`, `disjoin` | comparable; DuckDBGRanges pulls ahead at scale |
+| Overlap enumeration | `findOverlaps`, `subsetByOverlaps` | GRanges (interval trees) |
+
+The design vignette (*Design and extension of DuckDBGRanges*) shows the SQL each
+operation translates to.
+
+# A small, live comparison
+
+To show the mechanics without a large dataset, we build a small range set and run
+one operation on both an in-memory `GRanges` and a `DuckDBGRanges`, confirming the
+results agree.
+
+```{r live-demo}
+library(DuckDBGRanges)
+library(GenomicRanges)
+library(arrow)
+
+set.seed(1L)
+n <- 2000L
+df <- data.frame(
+    seqnames = sample(paste0("chr", 1:5), n, replace = TRUE),
+    start = sample(1:1e6, n),
+    strand = sample(c("+", "-", "*"), n, replace = TRUE),
+    score = runif(n))
+df$end <- df$start + sample(100:500, n, replace = TRUE)
+
+gr <- makeGRangesFromDataFrame(df, keep.extra.columns = TRUE)
+path <- tempfile(fileext = ".parquet"); write_parquet(df, path)
+ddb <- DuckDBGRanges(path, seqnames = "seqnames", start = "start",
+                     end = "end", strand = "strand", mcols = "score")
+
+## same answer, one in memory and one queried from disk
+r_gr  <- restrict(gr,  start = 1L, end = 500000L)
+r_ddb <- restrict(ddb, start = 1L, end = 500000L)
+length(r_gr) == length(r_ddb)
+```
+
+At this size the in-memory object is faster --- there is nothing to gain from going
+to disk, and the query has fixed overhead. The advantage appears at scale, which is
+what the offline benchmark measures.
+
+# Benchmark setup
+
+The full benchmark generates synthetic ranges at scale across the human autosomes:
+**1,000,000** peaks for the scATAC-seq scenario and **10,000,000** SNVs for the
+variant scenario, plus a 50,000-feature annotation set used as the subject of the
+overlap operations. For each scenario it times six operations on both backends and
+records the in-memory footprint of each object.
+
+The backends parallelize differently, so we give each its best effort on the same
+core budget: **`GRanges` runs single-threaded C code** (the in-memory baseline),
+while **`DuckDBGRanges` autotunes** DuckDB's internal threads up to the budget with
+no configuration. The exact parameters are recorded with the results and shown
+beneath the tables.
+
+# Results
+
+Rendered from the bundled offline results (`inst/scripts/benchmark_results.rds`);
+regenerate with `inst/scripts/run_vignette_benchmarks.R` (see that script's header).
+
+```{r results, echo=FALSE, results='asis'}
+helper <- system.file("scripts", "make_timings_table.R", package = "DuckDBGRanges")
+if (nzchar(helper)) {
+    source(helper)
+    res <- load_vignette_timings()
+} else {
+    res <- NULL
+}
+if (is.null(res)) {
+    cat("_Precomputed benchmark results are not available in this build; ",
+        "generate them with `inst/scripts/run_vignette_benchmarks.R`._\n", sep = "")
+} else {
+    cat("\n**Memory footprint**\n\n")
+    print(make_memory_table(
+        caption = "In-memory object size; DuckDBGRanges is constant regardless of N.",
+        results = res))
+    cat("\n\n**scATAC-seq scenario (1M peaks)**\n\n")
+    print(make_timings_table("scATAC", results = res,
+        caption = "Elapsed seconds. Speedup = GRanges / DuckDBGRanges (>1 favors DuckDB)."))
+    cat("\n\n**Variant scenario (10M variants)**\n\n")
+    print(make_timings_table("variant", results = res,
+        caption = "Elapsed seconds. Speedup = GRanges / DuckDBGRanges (>1 favors DuckDB)."))
+    cat("\n\n")
+    timings_config_note(res)
+}
+```
+
+# Main takeaways
+
+- **Memory is the headline.** A `DuckDBGRanges` is a small, constant-size handle
+  (~175 KB) whichever scenario it fronts, while a `GRanges` grows with the number
+  of ranges --- 150x smaller for a million peaks, over 1,500x smaller for ten
+  million variants. This is what lets you *reference* a hundred-million-range
+  catalogue without paying for it until a query touches it.
+- **Filtering favors DuckDB.** `restrict()` and logical subsetting become `WHERE`
+  clauses pushed into the Parquet reader, so they read only matching rows --- the
+  advantage grows with data size (a few times faster at a million peaks, ~13x at
+  ten million variants).
+- **Nearest-feature distance favors DuckDB, strongly.** `distanceToNearest()`
+  runs as an SQL aggregation rather than an interval-tree walk, and is the largest
+  single win measured (~10x at a million peaks, ~70x at ten million variants).
+- **Inter-range transforms are a wash that tips to DuckDB at scale.** `reduce()`
+  and `disjoin()` are close; in-memory `GRanges` edges `reduce()` at a million
+  peaks, but DuckDB pulls ahead on both by ten million ranges (`disjoin()` ~2x).
+- **Overlap enumeration favors GRanges, decisively.** `findOverlaps()` and
+  `subsetByOverlaps()` are backed by in-memory interval trees that a set-based SQL
+  join does not beat (GRanges is ~100x faster here). Hand these to a materialized
+  `GRanges`.
+- **The two compose.** The *filter, then materialize* pattern uses DuckDB to cut a
+  large set down cheaply, then hands the small result to `GRanges` for the
+  interval-tree step --- each backend where it is strongest.
+
+# Backend comparison
+
+| Feature | GRanges | DuckDBGRanges |
+|---------|---------|---------------|
+| Storage | Memory | Parquet file |
+| Object footprint | Proportional to N | Constant (~175 KB) |
+| Filtering | Scans all ranges | Predicate pushdown (faster) |
+| Nearest-feature distance | Interval trees | SQL aggregation (faster) |
+| Overlap enumeration | Interval trees (faster) | SQL join |
+| `reduce` / `disjoin` | Optimized C | SQL (comparable; faster at scale) |
+| Persistence | Session only | Files persist |
+| Read by other languages | R only | R, Python, Julia, ... |
+
+## When to use each
+
+- **`GRanges`** --- data fits comfortably in RAM; the fastest choice for
+  overlap-heavy work and small-to-mid range sets.
+- **`DuckDBGRanges`** --- larger-than-memory interval sets, filter-heavy pipelines,
+  keeping a huge annotation referenceable at constant memory cost, or when the
+  Parquet files are shared with non-R tooling. Combine with `GRanges` via *filter,
+  then materialize*.
+
+# Running your own benchmarks
+
+`inst/scripts/run_vignette_benchmarks.R` reproduces these numbers on your hardware
+and scales to other range counts (`BENCH_SCATAC_PEAKS`, `BENCH_VARIANTS`,
+`BENCH_CORES`; set small counts to smoke-test first). It writes
+`benchmark_results.rds`, which this vignette renders via
+`inst/scripts/make_timings_table.R`.
+
+For higher-level genomic workflows built on this backend, see the
+`r Biocpkg("BiocDuckDB")` package.
+
+# Session information
+
+```{r sessioninfo}
+sessionInfo()
+```

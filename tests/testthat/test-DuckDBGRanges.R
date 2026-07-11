@@ -746,6 +746,15 @@ test_that("resize works for DuckDBGRanges", {
     result_ddb_ign <- resize(ddb_gr, width = 5L, fix = "start", ignore.strand = TRUE)
     result_gr_ign <- resize(gr, width = 5L, fix = "start", ignore.strand = TRUE)
     checkDuckDBGRanges(result_ddb_ign, result_gr_ign)
+
+    # resize anchored at center must match base IRanges for both parities: an odd
+    result_ddb_c_odd <- resize(ddb_gr, width = 5L, fix = "center")
+    result_gr_c_odd <- resize(gr, width = 5L, fix = "center")
+    checkDuckDBGRanges(result_ddb_c_odd, result_gr_c_odd)
+
+    result_ddb_c_even <- resize(ddb_gr, width = 4L, fix = "center")
+    result_gr_c_even <- resize(gr, width = 4L, fix = "center")
+    checkDuckDBGRanges(result_ddb_c_even, result_gr_c_even)
 })
 
 test_that("flank works for DuckDBGRanges", {

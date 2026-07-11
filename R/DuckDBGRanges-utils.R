@@ -1157,13 +1157,12 @@ function(x, width, fix = "start", use.names = TRUE, ignore.strand = FALSE)
                 old_end)
         }
     } else if (fix == "center") {
-        # center = (start + end) / 2
-        # new_start = center - width/2
-        # new_end = center + width/2 - 1
-        half_width <- as.integer(width %/% 2L)
-        center <- call("/", call("+", old_start, old_end), 2L)
-        new_start <- call("-", center, half_width)
-        new_end <- call("-", call("+", center, half_width), 1L)
+        # new_start = start + (width(x) - width) %/% 2
+        # new_end   = new_start + width - 1
+        old_width <- call("+", call("-", old_end, old_start), 1L)
+        delta <- call("as.integer", call("%/%", call("-", old_width, width), 2L))
+        new_start <- call("+", old_start, delta)
+        new_end <- call("-", call("+", new_start, width), 1L)
     } else {
         stop("'fix' must be 'start', 'end', or 'center'")
     }

@@ -1,3 +1,14 @@
+# DuckDBGRanges 0.9.4
+
+## Bug fixes
+
+- `resize(x, width, fix = "center")` now matches base `IRanges::resize()`:
+  `new_start = start + (width(x) - width) %/% 2`, anchored at the (strand-independent)
+  center with an exact integer width. The previous implementation used the midpoint
+  `(start + end) / 2` with true division --- yielding fractional coordinates for
+  even-width ranges --- and `center + width %/% 2 - 1`, which returned `width - 1`
+  for odd target widths. Added `fix = "center"` cases to the `resize` tests.
+
 # DuckDBGRanges 0.9.3
 
 ## Documentation

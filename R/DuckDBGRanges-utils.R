@@ -140,10 +140,14 @@
 #'     For each range in x, find the index of the nearest range in subject.
 #'     Distance is 0 for overlapping ranges. For ties, one match is selected
 #'     arbitrarily (minimum index). Returns an integer vector or Hits object.
+#'     When \code{subject} is omitted (\code{nearest(x)}), each range's nearest
+#'     neighbour is found among the \emph{other} ranges of x -- a range is never
+#'     its own nearest neighbour -- matching base GenomicRanges' \code{drop.self}.
 #'   }
 #'   \item{\code{distanceToNearest(x, subject, ignore.strand=FALSE, select=c("arbitrary", "all"))}:}{
 #'     Find the nearest range and compute the distance. Returns a Hits object
-#'     with a "distance" metadata column containing the distances.
+#'     with a "distance" metadata column containing the distances. As with
+#'     \code{nearest}, the \code{subject}-omitted form excludes self-hits.
 #'   }
 #' }
 #'
@@ -3383,6 +3387,138 @@ function(x, y, ignore.strand = FALSE)
     )
 }
 
+# Core nearest-neighbour engine shared by nearest(x, subject) and nearest(x).
+# `drop.self = TRUE` excludes a range from being its own neighbour, matching base
+# GenomicRanges' nearest(x, missing) (which calls .nearest(x, x, drop.self=TRUE)).
+# Self must be removed BEFORE the minimum-distance step so a range with a self
+# overlap still resolves to its next-nearest neighbour rather than to itself.
+#' @importFrom dplyr mutate filter select arrange group_by summarize collect inner_join distinct ungroup
+.nearest_ddb <- function(x, subject, select, ignore.strand, drop.self = FALSE) {
+    n_x <- length(x)
+    n_subj <- length(subject)
+    if (n_x == 0L || n_subj == 0L) {
+        return(.empty_nearest_result(n_x, n_subj, select, "all"))
+    }
+
+    setup <- .setup_nearest_neighbor_join(x, subject, ignore.strand)
+    joined <- setup$joined
+
+    if (drop.self) {
+        joined <- filter(joined,
+                         !!!list(call("!=",
+                                      as.name("x_idx"),
+                                      as.name("subj_idx"))))
+    }
+
+    # Compute distance: max(subj_start - x_end - 1, x_start - subj_end - 1, 0);
+    # overlapping ranges have distance 0.
+    dist_expr <- list(
+        dist = call("greatest",
+                    call("-", call("-", as.name("subj_start"), as.name("end")), 1L),
+                    call("-", call("-", as.name("start"), as.name("subj_end")), 1L),
+                    0L)
+    )
+    joined <- mutate(joined, !!!dist_expr)
+
+    joined <- group_by(joined, !!!list(as.name("x_idx")))
+    min_dists <- summarize(joined,
+                           !!!list(min_dist = call("min", as.name("dist"), na.rm = TRUE)))
+    min_dists <- ungroup(min_dists)
+
+    joined <- ungroup(joined)
+    joined <- inner_join(joined, min_dists, by = "x_idx", suffix = c("", "_min"))
+    joined <- filter(joined, !!!list(call("==", as.name("dist"), as.name("min_dist"))))
+
+    if (select == "arbitrary") {
+        joined <- group_by(joined, !!!list(as.name("x_idx")))
+        result <- summarize(joined,
+                            !!!list(subj_idx = call("min", as.name("subj_idx"), na.rm = TRUE)))
+        result <- ungroup(result)
+        return(.build_nearest_single_result(collect(result), n_x))
+    } else {
+        result <- select(joined, !!!lapply(c("x_idx", "subj_idx"), as.name))
+        result <- distinct(result)
+        result <- arrange(result, !!!lapply(c("x_idx", "subj_idx"), as.name))
+        return(.build_nearest_hits_result(collect(result), n_x, n_subj))
+    }
+}
+
+# Core distanceToNearest engine shared by the (x, subject) and (x) forms; see
+# .nearest_ddb for the drop.self rationale (base uses drop.self=TRUE for x alone).
+#' @importFrom dplyr mutate filter select arrange group_by summarize collect inner_join distinct ungroup
+#' @importFrom S4Vectors DataFrame Hits mcols<-
+.distanceToNearest_ddb <- function(x, subject, ignore.strand, select, drop.self = FALSE) {
+    n_x <- length(x)
+    n_subj <- length(subject)
+    if (n_x == 0L || n_subj == 0L) {
+        hits <- Hits(nLnode = n_x, nRnode = n_subj)
+        mcols(hits) <- DataFrame(distance = integer(0))
+        return(hits)
+    }
+
+    setup <- .setup_nearest_neighbor_join(x, subject, ignore.strand)
+    joined <- setup$joined
+
+    if (drop.self) {
+        joined <- filter(joined,
+                         !!!list(call("!=", as.name("x_idx"), as.name("subj_idx"))))
+    }
+
+    dist_expr <- list(
+        dist = call("greatest",
+                    call("-", call("-", as.name("subj_start"), as.name("end")), 1L),
+                    call("-", call("-", as.name("start"), as.name("subj_end")), 1L),
+                    0L)
+    )
+    joined <- mutate(joined, !!!dist_expr)
+
+    # Filter out rows with NULL subj_idx (no match on seqnames/strand)
+    joined <- filter(joined,
+                     !!!list(call("!", call("is.na", as.name("subj_idx")))))
+
+    joined <- group_by(joined, !!!list(as.name("x_idx")))
+    min_dists <- summarize(joined,
+                           !!!list(min_dist = call("min", as.name("dist"), na.rm = TRUE)))
+    min_dists <- ungroup(min_dists)
+
+    joined <- ungroup(joined)
+    joined <- inner_join(joined, min_dists, by = "x_idx", suffix = c("", "_min"))
+    joined <- filter(joined,
+                     !!!list(call("==", as.name("dist"), as.name("min_dist"))))
+
+    if (select == "arbitrary") {
+        joined <- group_by(joined, !!!list(as.name("x_idx")))
+        result <- summarize(joined, !!!list(
+            subj_idx = call("min", as.name("subj_idx"), na.rm = TRUE),
+            distance = call("min", as.name("dist"), na.rm = TRUE)
+        ))
+        result <- ungroup(result)
+    } else {
+        result <- select(joined,
+                         !!!lapply(c("x_idx", "subj_idx", "dist"), as.name))
+        result <- mutate(result, distance = as.name("dist"))
+        result <- select(result,
+                         !!!lapply(c("x_idx", "subj_idx", "distance"), as.name))
+        result <- distinct(result)
+    }
+
+    result <- arrange(result, !!!lapply(c("x_idx", "subj_idx"), as.name))
+    result_df <- collect(result)
+
+    if (nrow(result_df) == 0) {
+        hits <- Hits(nLnode = n_x, nRnode = n_subj)
+        mcols(hits) <- DataFrame(distance = integer(0))
+        return(hits)
+    }
+
+    hits <- Hits(from = as.integer(result_df$x_idx),
+                 to = as.integer(result_df$subj_idx),
+                 nLnode = n_x,
+                 nRnode = n_subj)
+    mcols(hits) <- DataFrame(distance = as.integer(result_df$distance))
+    hits
+}
+
 #' @export
 #' @importFrom IRanges precede
 #' @importFrom dplyr mutate filter select arrange group_by summarize collect left_join inner_join copy_to distinct ungroup
@@ -3543,63 +3679,20 @@ function(x, subject, select = c("arbitrary", "all"), ignore.strand = FALSE)
     select <- match.arg(select)
     if (!isTRUEorFALSE(ignore.strand))
         stop("'ignore.strand' must be TRUE or FALSE")
-    
-    n_x <- length(x)
-    n_subj <- length(subject)
-    
-    # Handle empty cases
-    if (n_x == 0L || n_subj == 0L) {
-        return(.empty_nearest_result(n_x, n_subj, select, "all"))
-    }
-    
-    # Setup join
-    setup <- .setup_nearest_neighbor_join(x, subject, ignore.strand)
-    joined <- setup$joined
-    
-    # Compute distance: max(subj_start - x_end - 1, x_start - subj_end - 1, 0)
-    # For overlapping ranges, distance is 0
-    dist_expr <- list(
-        dist = call("greatest",
-                   call("-", call("-", as.name("subj_start"), as.name("end")), 1L),
-                   call("-", call("-", as.name("start"), as.name("subj_end")), 1L),
-                   0L)
-    )
-    joined <- mutate(joined, !!!dist_expr)
-    
-    # Group by x_idx and find minimum distance
-    joined <- group_by(joined, !!!list(as.name("x_idx")))
-    
-    # Get minimum distance per x
-    min_dists <- summarize(joined, !!!list(min_dist = call("min", as.name("dist"), na.rm = TRUE)))
-    min_dists <- ungroup(min_dists)
-    
-    # Re-join to get subject indices with min distance
-    joined <- ungroup(joined)
-    joined <- inner_join(joined, min_dists, by = "x_idx", suffix = c("", "_min"))
-    joined <- filter(joined, !!!list(call("==", as.name("dist"), as.name("min_dist"))))
-    
-    if (select == "arbitrary") {
-        # For ties, take minimum subj_idx
-        joined <- group_by(joined, !!!list(as.name("x_idx")))
-        result <- summarize(joined, !!!list(subj_idx = call("min", as.name("subj_idx"), na.rm = TRUE)))
-        result <- ungroup(result)
-        
-        return(.build_nearest_single_result(collect(result), n_x))
-    } else {
-        # select == "all"
-        result <- select(joined, !!!lapply(c("x_idx", "subj_idx"), as.name))
-        result <- distinct(result)
-        result <- arrange(result, !!!lapply(c("x_idx", "subj_idx"), as.name))
-        
-        return(.build_nearest_hits_result(collect(result), n_x, n_subj))
-    }
+    # An explicit subject keeps self-matches (matches base GenomicRanges).
+    .nearest_ddb(x, subject, select, ignore.strand, drop.self = FALSE)
 })
 
 #' @export
 setMethod("nearest", c("DuckDBGRanges", "missing"),
 function(x, subject, select = c("arbitrary", "all"), ignore.strand = FALSE)
 {
-    nearest(x, x, select = select, ignore.strand = ignore.strand)
+    select <- match.arg(select)
+    if (!isTRUEorFALSE(ignore.strand))
+        stop("'ignore.strand' must be TRUE or FALSE")
+    # No subject: a range is never its own nearest neighbour (base uses
+    # drop.self=TRUE for nearest(x, missing)).
+    .nearest_ddb(x, x, select, ignore.strand, drop.self = TRUE)
 })
 
 #' @export
@@ -3628,83 +3721,19 @@ function(x, subject, ignore.strand = FALSE, select = c("arbitrary", "all"))
     select <- match.arg(select)
     if (!isTRUEorFALSE(ignore.strand))
         stop("'ignore.strand' must be TRUE or FALSE")
-    
-    n_x <- length(x)
-    n_subj <- length(subject)
-    
-    # Handle empty cases
-    if (n_x == 0L || n_subj == 0L) {
-        hits <- Hits(nLnode = n_x, nRnode = n_subj)
-        mcols(hits) <- DataFrame(distance = integer(0))
-        return(hits)
-    }
-    
-    # Setup join
-    setup <- .setup_nearest_neighbor_join(x, subject, ignore.strand)
-    joined <- setup$joined
-    
-    # Compute distance: max(subj_start - x_end - 1, x_start - subj_end - 1, 0)
-    dist_expr <- list(
-        dist = call("greatest",
-                   call("-", call("-", as.name("subj_start"), as.name("end")), 1L),
-                   call("-", call("-", as.name("start"), as.name("subj_end")), 1L),
-                   0L)
-    )
-    joined <- mutate(joined, !!!dist_expr)
-    
-    # Filter out rows with NULL subj_idx (no match on seqnames/strand)
-    joined <- filter(joined, !!!list(call("!", call("is.na", as.name("subj_idx")))))
-    
-    # Group by x_idx and find minimum distance
-    joined <- group_by(joined, !!!list(as.name("x_idx")))
-    min_dists <- summarize(joined, !!!list(min_dist = call("min", as.name("dist"), na.rm = TRUE)))
-    min_dists <- ungroup(min_dists)
-    
-    # Re-join to get actual matches
-    joined <- ungroup(joined)
-    joined <- inner_join(joined, min_dists, by = "x_idx", suffix = c("", "_min"))
-    joined <- filter(joined, !!!list(call("==", as.name("dist"), as.name("min_dist"))))
-    
-    if (select == "arbitrary") {
-        # For ties, take minimum subj_idx
-        joined <- group_by(joined, !!!list(as.name("x_idx")))
-        result <- summarize(joined, !!!list(
-            subj_idx = call("min", as.name("subj_idx"), na.rm = TRUE),
-            distance = call("min", as.name("dist"), na.rm = TRUE)
-        ))
-        result <- ungroup(result)
-    } else {
-        # select == "all"
-        result <- select(joined, !!!lapply(c("x_idx", "subj_idx", "dist"), as.name))
-        result <- mutate(result, distance = as.name("dist"))
-        result <- select(result, !!!lapply(c("x_idx", "subj_idx", "distance"), as.name))
-        result <- distinct(result)
-    }
-    
-    result <- arrange(result, !!!lapply(c("x_idx", "subj_idx"), as.name))
-    result_df <- collect(result)
-    
-    if (nrow(result_df) == 0) {
-        hits <- Hits(nLnode = n_x, nRnode = n_subj)
-        mcols(hits) <- DataFrame(distance = integer(0))
-        return(hits)
-    }
-    
-    hits <- Hits(
-        from = as.integer(result_df$x_idx),
-        to = as.integer(result_df$subj_idx),
-        nLnode = n_x,
-        nRnode = n_subj
-    )
-    mcols(hits) <- DataFrame(distance = as.integer(result_df$distance))
-    hits
+    # An explicit subject keeps self-matches (matches base GenomicRanges).
+    .distanceToNearest_ddb(x, subject, ignore.strand, select, drop.self = FALSE)
 })
 
 #' @export
 setMethod("distanceToNearest", c("DuckDBGRanges", "missing"),
 function(x, subject, ignore.strand = FALSE, select = c("arbitrary", "all"))
 {
-    distanceToNearest(x, x, ignore.strand = ignore.strand, select = select)
+    select <- match.arg(select)
+    if (!isTRUEorFALSE(ignore.strand))
+        stop("'ignore.strand' must be TRUE or FALSE")
+    # No subject: exclude self-hits (base uses drop.self=TRUE for x alone).
+    .distanceToNearest_ddb(x, x, ignore.strand, select, drop.self = TRUE)
 })
 
 #' @export

@@ -1,3 +1,16 @@
+# DuckDBGRanges 0.9.5
+
+## Bug fixes
+
+- `nearest(x)` and `distanceToNearest(x)` (no `subject`) now exclude self-hits,
+  matching base GenomicRanges' `drop.self = TRUE` for the missing-subject form:
+  a range is never its own nearest neighbour, so its next-nearest is returned
+  instead of itself (distance 0). Previously both delegated to the two-argument
+  form against `x` itself, so every range matched itself. The explicit
+  `nearest(x, x)` / `distanceToNearest(x, x)` forms still keep self-hits, as in
+  base. (`precede`/`follow` were already correct — their strict inequalities
+  never admit a self-match.) Added a self-query test comparing to the base oracle.
+
 # DuckDBGRanges 0.9.4
 
 ## Bug fixes

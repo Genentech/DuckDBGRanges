@@ -298,10 +298,14 @@ Methods for finding the nearest ranges in a subject:
     For each range in x, find the index of the nearest range in subject.
     Distance is 0 for overlapping ranges. For ties, one match is selected
     arbitrarily (minimum index). Returns an integer vector or Hits object.
+    When \code{subject} is omitted (\code{nearest(x)}), each range's nearest
+    neighbour is found among the \emph{other} ranges of x -- a range is never
+    its own nearest neighbour -- matching base GenomicRanges' \code{drop.self}.
   }
   \item{\code{distanceToNearest(x, subject, ignore.strand=FALSE, select=c("arbitrary", "all"))}:}{
     Find the nearest range and compute the distance. Returns a Hits object
-    with a "distance" metadata column containing the distances.
+    with a "distance" metadata column containing the distances. As with
+    \code{nearest}, the \code{subject}-omitted form excludes self-hits.
   }
 }
 }

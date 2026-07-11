@@ -2482,8 +2482,43 @@ test_that("nearest works correctly", {
     result_ddb <- nearest(ddb_gr1, ddb_gr2)
     result_gr <- nearest(gr1, gr2)
     expect_equal(result_ddb, result_gr)
-    
+
     unlink(c(tf1, tf2))
+})
+
+test_that("nearest(x)/distanceToNearest(x) with no subject exclude self-hits", {
+    # Base GenomicRanges nearest(x, missing) uses drop.self=TRUE: a range is never
+    # its own nearest neighbour. The self-query methods must match the base oracle
+    # (c(2, 1, 1) here, not the self-hits c(1, 2, 3)).
+    df <- data.frame(
+        id = c("a", "b", "c"),
+        seqnames = c("chr1", "chr1", "chr1"),
+        start = c(10L, 100L, 500L),
+        end = c(20L, 110L, 510L),
+        strand = c("*", "*", "*"),
+        stringsAsFactors = FALSE
+    )
+    tf <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(df, tf)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", keycol = "id")
+    gr <- as(ddb_gr, "GRanges")
+
+    # No subject -> self excluded, matching base.
+    expect_equal(nearest(ddb_gr), nearest(gr))
+
+    # distanceToNearest: compare by components (base returns a SortedByQueryHits
+    # subclass, the port a plain Hits — identical content, different label).
+    d2n_ddb <- distanceToNearest(ddb_gr)
+    d2n_gr <- distanceToNearest(gr)
+    expect_equal(queryHits(d2n_ddb), queryHits(d2n_gr))
+    expect_equal(subjectHits(d2n_ddb), subjectHits(d2n_gr))
+    expect_equal(mcols(d2n_ddb)$distance, mcols(d2n_gr)$distance)
+
+    # An explicit subject == x keeps self-hits (base does not drop self there).
+    expect_equal(nearest(ddb_gr, ddb_gr), nearest(gr, gr))
+
+    unlink(tf)
 })
 
 test_that("nearest with overlapping ranges returns correct index", {

@@ -10,6 +10,24 @@
   `nearest(x, x)` / `distanceToNearest(x, x)` forms still keep self-hits, as in
   base. (`precede`/`follow` were already correct — their strict inequalities
   never admit a self-match.) Added a self-query test comparing to the base oracle.
+- `nearest`/`precede`/`follow`/`distanceToNearest` now treat strand `"*"` as
+  compatible with any strand, matching base GenomicRanges: `"+"` pairs with
+  `{+,*}`, `"-"` with `{-,*}`, and `"*"` with all. The neighbour join used a
+  strict equi-join on strand, which silently dropped every `"*"` pair (a `"*"`
+  query against `"+"`/`"-"` subjects returned `NA`). The join is now on
+  `seqnames` only, followed by a strand-compatibility filter.
+- `precede()` and `follow()` are now strand-directional. Base defines them in the
+  transcription direction — for a `"-"` strand query the roles of upstream and
+  downstream are reversed, and for a `"*"` query the direction is chosen per
+  subject strand. The previous implementation used a fixed genomic-coordinate
+  direction regardless of strand, so results were inverted on the `"-"` strand.
+  The convention is now selected per row (`subj_start > end` vs `subj_end <
+  start`) via `use_minus = strand == "-" | (strand == "*" & subj_strand == "-")`,
+  ranking by the transcription-direction gap; `ignore.strand = TRUE` collapses to
+  the `"+"` convention as before. `follow()` keeps its base `select = "last"`
+  (largest index) tie-break, `precede()` its `select = "first"` (smallest index).
+  Added oracle tests against base GenomicRanges across `+`/`-`/`*` queries with
+  mixed-strand subjects, plus tie-break tests.
 
 # DuckDBGRanges 0.9.4
 

@@ -2805,8 +2805,79 @@ test_that("precede/follow/nearest with mixed types work", {
     expect_equal(precede(gr1, ddb_gr2), precede(gr1, gr2))
     expect_equal(follow(gr1, ddb_gr2), follow(gr1, gr2))
     expect_equal(nearest(gr1, ddb_gr2), nearest(gr1, gr2))
-    
+
     unlink(c(tf1, tf2))
+})
+
+test_that("precede/follow/nearest are strand-directional and '*'-compatible", {
+    # A '-' strand query inverts precede/follow direction, and '*' is compatible
+    # with any strand. Both used to diverge from base GenomicRanges (a strict
+    # strand equi-join dropped every '*' pair, and precede/follow used a fixed
+    # genomic direction regardless of strand). Oracle-check against base across
+    # '+', '-' and '*' queries with mixed-strand subjects.
+    df_q <- data.frame(
+        id = c("qp", "qm", "qs"),
+        seqnames = "chr1",
+        start = c(100L, 100L, 100L),
+        end = c(110L, 110L, 110L),
+        strand = c("+", "-", "*"),
+        stringsAsFactors = FALSE
+    )
+    df_s <- data.frame(
+        id = c("lp", "rp", "lm", "rm"),
+        seqnames = "chr1",
+        start = c(10L, 200L, 20L, 300L),
+        end = c(50L, 300L, 60L, 400L),
+        strand = c("+", "+", "-", "-"),
+        stringsAsFactors = FALSE
+    )
+    tfq <- tempfile(fileext = ".parquet")
+    tfs <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(df_q, tfq)
+    arrow::write_parquet(df_s, tfs)
+    q <- DuckDBGRanges(tfq, seqnames = "seqnames", start = "start", end = "end",
+                       strand = "strand", keycol = "id")
+    s <- DuckDBGRanges(tfs, seqnames = "seqnames", start = "start", end = "end",
+                       strand = "strand", keycol = "id")
+    gq <- as(q, "GRanges")
+    gs <- as(s, "GRanges")
+
+    expect_equal(precede(q, s), precede(gq, gs))
+    expect_equal(follow(q, s), follow(gq, gs))
+    expect_equal(nearest(q, s), nearest(gq, gs))
+
+    unlink(c(tfq, tfs))
+})
+
+test_that("follow/precede tie-breaks match base select last/first", {
+    # Identical-coordinate subjects: base precede uses select="first" (smallest
+    # index), follow uses select="last" (largest index).
+    df_q <- data.frame(id = "q", seqnames = "chr1", start = 100L, end = 110L,
+                       strand = "+", stringsAsFactors = FALSE)
+    df_left <- data.frame(id = c("a", "b"), seqnames = "chr1",
+                          start = c(50L, 50L), end = c(90L, 90L),
+                          strand = c("+", "+"), stringsAsFactors = FALSE)
+    df_right <- data.frame(id = c("a", "b"), seqnames = "chr1",
+                           start = c(200L, 200L), end = c(250L, 250L),
+                           strand = c("+", "+"), stringsAsFactors = FALSE)
+    tfq <- tempfile(fileext = ".parquet")
+    tfl <- tempfile(fileext = ".parquet")
+    tfr <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(df_q, tfq)
+    arrow::write_parquet(df_left, tfl)
+    arrow::write_parquet(df_right, tfr)
+    q <- DuckDBGRanges(tfq, seqnames = "seqnames", start = "start", end = "end",
+                       strand = "strand", keycol = "id")
+    sl <- DuckDBGRanges(tfl, seqnames = "seqnames", start = "start", end = "end",
+                        strand = "strand", keycol = "id")
+    sr <- DuckDBGRanges(tfr, seqnames = "seqnames", start = "start", end = "end",
+                        strand = "strand", keycol = "id")
+
+    # follow -> largest index (2); precede -> smallest index (1).
+    expect_equal(follow(q, sl), follow(as(q, "GRanges"), as(sl, "GRanges")))
+    expect_equal(precede(q, sr), precede(as(q, "GRanges"), as(sr, "GRanges")))
+
+    unlink(c(tfq, tfl, tfr))
 })
 
 ### =========================================================================

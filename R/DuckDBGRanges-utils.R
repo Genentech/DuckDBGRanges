@@ -3338,17 +3338,25 @@ function(x, y, ignore.strand = FALSE)
     subj_select <- lapply(c("subj_idx", "subj_seqnames", "subj_start", "subj_end", "subj_strand"), as.name)
     subj_conn <- select(subj_conn, !!!subj_select)
     
-    # Join on seqnames (and strand if not ignore.strand)
-    if (ignore.strand) {
-        joined <- left_join(x_conn, subj_conn, 
-                           by = c("seqnames" = "subj_seqnames"),
-                           suffix = c("", "_y"))
-    } else {
-        joined <- left_join(x_conn, subj_conn, 
-                           by = c("seqnames" = "subj_seqnames", "strand" = "subj_strand"),
-                           suffix = c("", "_y"))
+    # Join on seqnames only, then (unless ignore.strand) apply a strand
+    # COMPATIBILITY filter rather than an equi-join on strand. Base
+    # GenomicRanges treats '*' as matching any strand, so '+' pairs with {+,*},
+    # '-' with {-,*}, and '*' with all -- an equi-join on strand would silently
+    # drop every '*' pair. Joining on seqnames alone also keeps 'subj_strand' as
+    # a column, which precede()/follow() need to choose the transcription
+    # direction per row.
+    joined <- left_join(x_conn, subj_conn,
+                        by = c("seqnames" = "subj_seqnames"),
+                        suffix = c("", "_y"))
+    if (!ignore.strand) {
+        joined <- filter(joined, !!!list(
+            call("|",
+                 call("|",
+                      call("==", as.name("strand"), "*"),
+                      call("==", as.name("subj_strand"), "*")),
+                 call("==", as.name("strand"), as.name("subj_strand")))))
     }
-    
+
     list(joined = joined, n_x = length(x), n_subj = length(subject))
 }
 
@@ -3521,7 +3529,7 @@ function(x, y, ignore.strand = FALSE)
 
 #' @export
 #' @importFrom IRanges precede
-#' @importFrom dplyr mutate filter select arrange group_by summarize collect left_join inner_join copy_to distinct ungroup
+#' @importFrom dplyr mutate filter select arrange group_by summarize collect left_join inner_join copy_to distinct ungroup if_else
 #' @importFrom S4Vectors isTRUEorFALSE
 setMethod("precede", c("DuckDBGRanges", "DuckDBGRanges"),
 function(x, subject, select = c("first", "all"), ignore.strand = FALSE)
@@ -3541,24 +3549,46 @@ function(x, subject, select = c("first", "all"), ignore.strand = FALSE)
     # Setup join
     setup <- .setup_nearest_neighbor_join(x, subject, ignore.strand)
     joined <- setup$joined
-    
-    # Filter: subject must start after x ends (precede condition)
-    joined <- filter(joined, !!!list(call(">", as.name("subj_start"), as.name("end"))))
-    
+
+    # precede is strand-DIRECTIONAL. Base picks the convention per row by the
+    # QUERY strand (and, for a '*' query, by the SUBJECT strand): for '+'/'*' the
+    # preceded subject lies to the right (subj_start > x_end); for '-' it lies to
+    # the left (subj_end < x_start). ignore.strand collapses everything to '+'.
+    # `pf_dist` is the (positive) gap in the transcription direction, so the
+    # nearest is min(pf_dist) whichever side applies.
+    if (ignore.strand) {
+        valid_expr <- call(">", as.name("subj_start"), as.name("end"))
+        dist_expr  <- call("-", as.name("subj_start"), as.name("end"))
+    } else {
+        use_minus <- call("|",
+                          call("==", as.name("strand"), "-"),
+                          call("&",
+                               call("==", as.name("strand"), "*"),
+                               call("==", as.name("subj_strand"), "-")))
+        valid_expr <- call("if_else", use_minus,
+                           call("<", as.name("subj_end"), as.name("start")),
+                           call(">", as.name("subj_start"), as.name("end")))
+        dist_expr  <- call("if_else", use_minus,
+                           call("-", as.name("start"), as.name("subj_end")),
+                           call("-", as.name("subj_start"), as.name("end")))
+    }
+    joined <- mutate(joined, !!!list(pf_valid = valid_expr, pf_dist = dist_expr))
+    joined <- filter(joined, !!!list(as.name("pf_valid")))
+
     # Group by x_idx
     joined <- group_by(joined, !!!list(as.name("x_idx")))
-    
+
     if (select == "first") {
-        # Rank by subj_start (minimum first)
-        joined <- mutate(joined, !!!list(rk = call("dense_rank", as.name("subj_start"))))
+        # Rank by transcription-direction distance (nearest first)
+        joined <- mutate(joined, !!!list(rk = call("dense_rank", as.name("pf_dist"))))
         joined <- ungroup(joined)
         joined <- filter(joined, !!!list(call("==", as.name("rk"), 1L)))
-        
-        # For ties, take minimum subj_idx
+
+        # For ties, take minimum subj_idx (base select = "first")
         joined <- group_by(joined, !!!list(as.name("x_idx")))
         result <- summarize(joined, !!!list(subj_idx = call("min", as.name("subj_idx"), na.rm = TRUE)))
         result <- ungroup(result)
-        
+
         return(.build_nearest_single_result(collect(result), n_x))
     } else {
         # select == "all"
@@ -3596,7 +3626,7 @@ function(x, subject, select = c("first", "all"), ignore.strand = FALSE)
 
 #' @export
 #' @importFrom IRanges follow
-#' @importFrom dplyr mutate filter select arrange group_by summarize collect left_join inner_join copy_to distinct ungroup desc
+#' @importFrom dplyr mutate filter select arrange group_by summarize collect left_join inner_join copy_to distinct ungroup desc if_else
 #' @importFrom S4Vectors isTRUEorFALSE
 setMethod("follow", c("DuckDBGRanges", "DuckDBGRanges"),
 function(x, subject, select = c("last", "all"), ignore.strand = FALSE)
@@ -3616,24 +3646,46 @@ function(x, subject, select = c("last", "all"), ignore.strand = FALSE)
     # Setup join
     setup <- .setup_nearest_neighbor_join(x, subject, ignore.strand)
     joined <- setup$joined
-    
-    # Filter: subject must end before x starts (follow condition)
-    joined <- filter(joined, !!!list(call("<", as.name("subj_end"), as.name("start"))))
-    
+
+    # follow is strand-DIRECTIONAL (the mirror of precede). Base picks the
+    # convention per row by the QUERY strand (and, for a '*' query, by the SUBJECT
+    # strand): for '+'/'*' the followed subject lies to the left (subj_end <
+    # x_start); for '-' it lies to the right (subj_start > x_end). ignore.strand
+    # collapses everything to '+'. `pf_dist` is the positive gap in the
+    # transcription direction, so the nearest is min(pf_dist).
+    if (ignore.strand) {
+        valid_expr <- call("<", as.name("subj_end"), as.name("start"))
+        dist_expr  <- call("-", as.name("start"), as.name("subj_end"))
+    } else {
+        use_minus <- call("|",
+                          call("==", as.name("strand"), "-"),
+                          call("&",
+                               call("==", as.name("strand"), "*"),
+                               call("==", as.name("subj_strand"), "-")))
+        valid_expr <- call("if_else", use_minus,
+                           call(">", as.name("subj_start"), as.name("end")),
+                           call("<", as.name("subj_end"), as.name("start")))
+        dist_expr  <- call("if_else", use_minus,
+                           call("-", as.name("subj_start"), as.name("end")),
+                           call("-", as.name("start"), as.name("subj_end")))
+    }
+    joined <- mutate(joined, !!!list(pf_valid = valid_expr, pf_dist = dist_expr))
+    joined <- filter(joined, !!!list(as.name("pf_valid")))
+
     # Group by x_idx
     joined <- group_by(joined, !!!list(as.name("x_idx")))
-    
+
     if (select == "last") {
-        # Rank by subj_end descending (maximum first)
-        joined <- mutate(joined, !!!list(rk = call("dense_rank", call("desc", as.name("subj_end")))))
+        # Rank by transcription-direction distance (nearest first)
+        joined <- mutate(joined, !!!list(rk = call("dense_rank", as.name("pf_dist"))))
         joined <- ungroup(joined)
         joined <- filter(joined, !!!list(call("==", as.name("rk"), 1L)))
-        
-        # For ties, take maximum subj_idx
+
+        # For ties, take maximum subj_idx (base select = "last")
         joined <- group_by(joined, !!!list(as.name("x_idx")))
         result <- summarize(joined, !!!list(subj_idx = call("max", as.name("subj_idx"), na.rm = TRUE)))
         result <- ungroup(result)
-        
+
         return(.build_nearest_single_result(collect(result), n_x))
     } else {
         # select == "all"

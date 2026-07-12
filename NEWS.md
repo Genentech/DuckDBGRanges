@@ -2,6 +2,16 @@
 
 ## Bug fixes
 
+- `narrow()` now treats a **negative `start`** as a position counting back from
+  the range end (`-1` is the last base), matching base `IRanges::narrow`
+  (`solveUserSEW`) and the existing negative-`end` behaviour. Previously a
+  negative `start` was applied as `start + (start - 1)`, walking left of the
+  range start and producing an invalid interval. The start/end/width expressions
+  are rebuilt so every sign-and-`width` combination is correct; because the
+  `datacols` expressions flatten to SQL without parentheses, each is kept as a
+  `column +/- scalar` (never a subtraction of a compound). Oracle-tested against
+  base `narrow` across positive/negative `start`/`end` and their `width`
+  combinations.
 - `nearest(x)` and `distanceToNearest(x)` (no `subject`) now exclude self-hits,
   matching base GenomicRanges' `drop.self = TRUE` for the missing-subject form:
   a range is never its own nearest neighbour, so its next-nearest is returned

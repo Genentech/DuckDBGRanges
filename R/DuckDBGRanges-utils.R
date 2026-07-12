@@ -271,7 +271,9 @@
 #' @param width For \code{resize} and \code{flank}, the target width.
 #' @param fix For \code{resize}, where to anchor: "start", "end", or "center".
 #' @param start,end For \code{narrow}, the new start/end positions relative to
-#'   current ranges. For \code{flank}, if \code{TRUE} get upstream flanks.
+#'   current ranges; a negative value counts back from the range end (\code{-1}
+#'   is the last base), matching base \code{IRanges::narrow}. For \code{flank},
+#'   if \code{TRUE} get upstream flanks.
 #' @param both For \code{flank}, if \code{TRUE} get flanks on both sides.
 #' @param upstream,downstream For \code{promoters}/\code{terminators}, distances.
 #' @param use.names If \code{TRUE}, preserve names in output.
@@ -1056,53 +1058,62 @@ function(x, start = NA, end = NA, width = NA, use.names = TRUE)
     old_end <- datacols[["end"]]
     old_width <- datacols[["width"]]
 
-    # narrow adjusts positions relative to current range
+    # narrow adjusts positions relative to each range. Base IRanges
+    # (solveUserSEW) treats a NEGATIVE start OR end as a position counting back
+    # from the range end (-1 is the last base); a positive one counts from the
+    # start.
+    s <- if (is.na(start)) NA_integer_ else as.integer(start)
+    e <- if (is.na(end)) NA_integer_ else as.integer(end)
+    w <- if (is.na(width)) NA_integer_ else as.integer(width)
+
+    if (is.na(s) && is.na(e) && is.na(w))
+        return(x)
+
+    # New start/end as `column +/- scalar` (NULL = unchanged).
     new_start <- NULL
     new_end <- NULL
-    new_width <- NULL
+    if (!is.na(s))
+        new_start <- if (s < 0L) call("+", old_end, s + 1L) else
+            call("+", old_start, s - 1L)
+    if (!is.na(e))
+        new_end <- if (e < 0L) call("+", old_end, e + 1L) else
+            call("-", call("+", old_start, e), 1L)
 
-    start_offset <- 0L
-    end_offset <- 0L
-
-    if (!is.na(start)) {
-        # start=2 means skip first (start-1) positions
-        start_offset <- as.integer(start) - 1L
-        new_start <- call("+", old_start, start_offset)
+    # A given width fixes the missing side; anchor at the already-resolved start
+    # (or end). Adding a scalar to `new_start`, or subtracting a scalar from
+    # `new_end`, keeps the expression `column +/- scalar` (safe).
+    if (!is.na(w)) {
+        if (!is.na(s)) {
+            new_end <- call("+", new_start, w - 1L)   # new_start + (w-1)
+        } else if (!is.na(e)) {
+            new_start <- call("-", new_end, w - 1L)   # new_end - (w-1)
+        }
     }
-    if (!is.na(end)) {
-        if (end < 0L) {
-            # negative end: position relative to end of range
-            # end=-2 means second-to-last position
-            end_offset <- as.integer(end) + 1L  # e.g., -2 + 1 = -1
-            new_end <- call("+", old_end, end_offset)
+
+    # width column. `old_width` is itself the expression `end - start + 1`, so it
+    # may only be ADDED to (never subtracted, and never subtract any compound).
+    # Each case below is a scalar, `old_width + scalar`, or `(old_start -
+    # old_end) + scalar` — where old_start/old_end are plain coordinate columns,
+    # matching the subtractions the rest of this method already uses.
+    if (!is.na(w)) {
+        new_width <- w
+    } else if (!is.na(s) && !is.na(e)) {
+        if (s >= 0L && e >= 0L) {
+            new_width <- e - s + 1L
+        } else if (s >= 0L && e < 0L) {
+            new_width <- call("+", old_width, e - s + 2L)
+        } else if (s < 0L && e >= 0L) {
+            # width = new_end - new_start + 1
+            #       = (old_start + e - 1) - (old_end + s + 1) + 1
+            #       = (old_start - old_end) + (e - s - 1)
+            new_width <- call("+", call("-", old_start, old_end), e - s - 1L)
         } else {
-            # positive end: position relative to start
-            # new_end = old_start + end - 1
-            new_end <- call("-", call("+", old_start, as.integer(end)), 1L)
+            new_width <- e - s + 1L
         }
-    }
-    if (!is.na(width)) {
-        new_width <- as.integer(width)
-        if (!is.na(start)) {
-            # end = new_start + width - 1 = old_start + start_offset + width - 1
-            new_end <- call("-", call("+", call("+", old_start, start_offset), new_width), 1L)
-        } else if (!is.na(end)) {
-            # start = new_end - width + 1
-            if (end < 0L) {
-                new_start <- call("+", call("-", call("+", old_end, end_offset), new_width), 1L)
-            } else {
-                new_start <- call("+", call("-", new_end, new_width), 1L)
-            }
-        }
-    } else {
-        # Compute new width based on offset changes
-        # new_width = old_width - start_offset - abs(end_offset) (when end is negative)
-        # For start only: new_width = old_width - start_offset
-        # For end only (negative): new_width = old_width + end_offset (end_offset is negative)
-        total_reduction <- start_offset - end_offset  # end_offset is negative or 0
-        if (total_reduction != 0L) {
-            new_width <- call("-", old_width, total_reduction)
-        }
+    } else if (!is.na(s)) {
+        new_width <- if (s < 0L) -s else call("-", old_width, s - 1L)
+    } else {  # end only
+        new_width <- if (e < 0L) call("+", old_width, e + 1L) else e
     }
 
     .modify_DuckDBGRanges_datacols(x, new_start = new_start, new_end = new_end,

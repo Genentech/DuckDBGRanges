@@ -113,7 +113,9 @@ that do NOT overlap. Default is \code{FALSE}.}
 \item{fix}{For \code{resize}, where to anchor: "start", "end", or "center".}
 
 \item{start, end}{For \code{narrow}, the new start/end positions relative to
-current ranges. For \code{flank}, if \code{TRUE} get upstream flanks.}
+current ranges; a negative value counts back from the range end (\code{-1}
+is the last base), matching base \code{IRanges::narrow}. For \code{flank},
+if \code{TRUE} get upstream flanks.}
 
 \item{both}{For \code{flank}, if \code{TRUE} get flanks on both sides.}
 

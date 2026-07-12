@@ -724,6 +724,12 @@ test_that("narrow works for DuckDBGRanges", {
     result_ddb_end <- narrow(ddb_gr, end = -2)
     result_gr_end <- narrow(gr, end = -2)
     checkDuckDBGRanges(result_ddb_end, result_gr_end)
+
+    # narrow by NEGATIVE start: counts back from the range end (base solveUserSEW),
+    # not start + (start - 1). Oracle-checked against base IRanges::narrow.
+    result_ddb_ns <- narrow(ddb_gr, start = -1)
+    result_gr_ns <- narrow(gr, start = -1)
+    checkDuckDBGRanges(result_ddb_ns, result_gr_ns)
 })
 
 test_that("resize works for DuckDBGRanges", {

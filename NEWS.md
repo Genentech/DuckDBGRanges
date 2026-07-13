@@ -1,3 +1,17 @@
+# DuckDBGRanges 0.9.6
+
+## Bug fixes
+
+- `precede()`/`follow()` with `select = "all"` now return only the subject(s) at
+  the **nearest** distance (the ties), matching base GenomicRanges — previously
+  they returned every directional subject. The `select = "first"`/`"last"` paths
+  were already correct; the `"all"` branch was missing the min-distance filter.
+- `distance()` now returns `NA` for a paired range on a **different seqname** or
+  (unless `ignore.strand = TRUE`) an **incompatible strand** (`+` vs `-`; `*`
+  matches any strand), matching base `GenomicRanges::distance`. Previously it
+  ignored seqnames and strand and returned a bare coordinate gap. Added an
+  `ignore.strand` argument.
+
 # DuckDBGRanges 0.9.5
 
 ## Bug fixes

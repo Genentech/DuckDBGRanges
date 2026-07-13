@@ -1949,7 +1949,7 @@ function(x, y, ignore.strand = FALSE)
 #' @export
 #' @importFrom DuckDBDataFrame tblconn
 #' @importFrom IRanges distance
-#' @importFrom dplyr arrange collect inner_join mutate row_number select
+#' @importFrom dplyr arrange collect if_else inner_join mutate row_number select
 setMethod("distance", c("DuckDBGRanges", "DuckDBGRanges"),
 function(x, y, ignore.strand = FALSE, ...)
 {
@@ -1960,20 +1960,23 @@ function(x, y, ignore.strand = FALSE, ...)
     if (n == 0L)
         return(integer(0L))
 
-    # SQL-based distance computation
+    # SQL-based distance computation. Carry seqnames + strand through the join so
+    # incompatible pairs can be set to NA (base GenomicRanges::distance returns NA
+    # for a pair on different seqnames, or — unless ignore.strand — on '+' vs '-';
+    # '*' matches any strand).
     row_idx_mutate <- setNames(list(call("row_number")), ".row_idx")
     x_conn <- tblconn(x@frame)
     x_conn <- mutate(x_conn, !!!row_idx_mutate)
     x_select_list <- setNames(
-        lapply(c(".row_idx", "start", "end"), as.name),
-        c(".row_idx", "x_start", "x_end"))
+        lapply(c(".row_idx", "seqnames", "strand", "start", "end"), as.name),
+        c(".row_idx", "x_seqnames", "x_strand", "x_start", "x_end"))
     x_conn <- select(x_conn, !!!x_select_list)
 
     y_conn <- tblconn(y@frame)
     y_conn <- mutate(y_conn, !!!row_idx_mutate)
     y_select_list <- setNames(
-        lapply(c(".row_idx", "start", "end"), as.name),
-        c(".row_idx", "y_start", "y_end"))
+        lapply(c(".row_idx", "seqnames", "strand", "start", "end"), as.name),
+        c(".row_idx", "y_seqnames", "y_strand", "y_start", "y_end"))
     y_conn <- select(y_conn, !!!y_select_list)
 
     joined <- inner_join(x_conn, y_conn, by = ".row_idx", copy = TRUE)
@@ -1983,8 +1986,22 @@ function(x, y, ignore.strand = FALSE, ...)
     # Use call() for greatest/least which are SQL functions translated by dbplyr
     greatest_call <- call("greatest", as.name("x_start"), as.name("y_start"))
     least_call <- call("least", as.name("x_end"), as.name("y_end"))
-    dist_expr <- call("greatest", 0L,
-                      call("-", call("-", greatest_call, least_call), 1L))
+    gap_expr <- call("greatest", 0L,
+                     call("-", call("-", greatest_call, least_call), 1L))
+
+    # Valid pair: same seqname, and (unless ignore.strand) compatible strand.
+    same_seq <- call("==", as.name("x_seqnames"), as.name("y_seqnames"))
+    if (ignore.strand) {
+        valid_expr <- same_seq
+    } else {
+        strand_ok <- call("|",
+                          call("|",
+                               call("==", as.name("x_strand"), as.name("y_strand")),
+                               call("==", as.name("x_strand"), "*")),
+                          call("==", as.name("y_strand"), "*"))
+        valid_expr <- call("&", same_seq, strand_ok)
+    }
+    dist_expr <- call("if_else", valid_expr, gap_expr, NA_integer_)
     dist_mutate <- list(dist = dist_expr)
     joined <- mutate(joined, !!!dist_mutate)
 
@@ -3602,12 +3619,16 @@ function(x, subject, select = c("first", "all"), ignore.strand = FALSE)
 
         return(.build_nearest_single_result(collect(result), n_x))
     } else {
-        # select == "all"
+        # select == "all": base returns every subject at the NEAREST distance
+        # (the ties), not all directional subjects — so filter to the minimum
+        # pf_dist per query first (mirrors .nearest_ddb/.distanceToNearest_ddb).
+        joined <- mutate(joined, !!!list(rk = call("dense_rank", as.name("pf_dist"))))
+        joined <- ungroup(joined)
+        joined <- filter(joined, !!!list(call("==", as.name("rk"), 1L)))
         result <- select(joined, !!!lapply(c("x_idx", "subj_idx"), as.name))
-        result <- ungroup(result)
         result <- distinct(result)
         result <- arrange(result, !!!lapply(c("x_idx", "subj_idx"), as.name))
-        
+
         return(.build_nearest_hits_result(collect(result), n_x, n_subj))
     }
 })
@@ -3699,12 +3720,16 @@ function(x, subject, select = c("last", "all"), ignore.strand = FALSE)
 
         return(.build_nearest_single_result(collect(result), n_x))
     } else {
-        # select == "all"
+        # select == "all": base returns every subject at the NEAREST distance
+        # (the ties), not all directional subjects — so filter to the minimum
+        # pf_dist per query first (mirrors .nearest_ddb/.distanceToNearest_ddb).
+        joined <- mutate(joined, !!!list(rk = call("dense_rank", as.name("pf_dist"))))
+        joined <- ungroup(joined)
+        joined <- filter(joined, !!!list(call("==", as.name("rk"), 1L)))
         result <- select(joined, !!!lapply(c("x_idx", "subj_idx"), as.name))
-        result <- ungroup(result)
         result <- distinct(result)
         result <- arrange(result, !!!lapply(c("x_idx", "subj_idx"), as.name))
-        
+
         return(.build_nearest_hits_result(collect(result), n_x, n_subj))
     }
 })

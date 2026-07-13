@@ -2886,6 +2886,48 @@ test_that("follow/precede tie-breaks match base select last/first", {
     unlink(c(tfq, tfl, tfr))
 })
 
+test_that("precede/follow select='all' returns only nearest-distance ties", {
+    # Base returns the subject(s) at the NEAREST distance, not every directional
+    # subject. Integer keycols (seq_len) give a deterministic 1..n element order.
+    q <- .gr_to_ddb(GRanges("chr1", IRanges(10, 20), strand = "+"), keycol = 1L)
+    s <- .gr_to_ddb(
+        GRanges("chr1", IRanges(c(25L, 30L, 40L), c(26L, 31L, 41L)), strand = "+"),
+        keycol = seq_len(3L)
+    )
+    pd <- precede(q, s, select = "all")
+    pb <- precede(as(q, "GRanges"), as(s, "GRanges"), select = "all")
+    expect_equal(queryHits(pd), queryHits(pb))
+    expect_equal(subjectHits(pd), subjectHits(pb))  # only subject 1 (nearest)
+
+    qf <- .gr_to_ddb(GRanges("chr1", IRanges(100, 110), strand = "+"), keycol = 1L)
+    sf <- .gr_to_ddb(
+        GRanges("chr1", IRanges(c(1L, 40L, 60L), c(20L, 50L, 70L)), strand = "+"),
+        keycol = seq_len(3L)
+    )
+    fd <- follow(qf, sf, select = "all")
+    fb <- follow(as(qf, "GRanges"), as(sf, "GRanges"), select = "all")
+    expect_equal(queryHits(fd), queryHits(fb))
+    expect_equal(subjectHits(fd), subjectHits(fb))  # only subject 3 (nearest)
+})
+
+test_that("distance() returns NA for incompatible strands or seqnames", {
+    # base GenomicRanges::distance: NA on different seqnames, or (unless
+    # ignore.strand) on '+' vs '-'; '*' matches any strand. Length-1 ranges keep
+    # the element-wise pairing unambiguous.
+    one <- function(seqn, s, st) {
+        .gr_to_ddb(GRanges(seqn, IRanges(s, s + 9L), strand = st), keycol = 1L)
+    }
+    expect_true(is.na(distance(one("chr1", 1L, "+"), one("chr1", 20L, "-"))))
+    expect_equal(distance(one("chr1", 1L, "+"), one("chr1", 20L, "+")), 9L)
+    expect_equal(distance(one("chr1", 1L, "+"), one("chr1", 20L, "*")), 9L)
+    expect_true(is.na(distance(one("chr1", 1L, "+"), one("chr2", 20L, "+"))))
+    # ignore.strand drops the strand rule (seqname mismatch still NA).
+    expect_equal(
+        distance(one("chr1", 1L, "+"), one("chr1", 20L, "-"), ignore.strand = TRUE),
+        9L
+    )
+})
+
 ### =========================================================================
 ### Phase 5: Tiling methods (tile, slidingWindows, pgap)
 ### =========================================================================

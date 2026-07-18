@@ -1,3 +1,10 @@
+# Pin DuckDB to a single thread so parallel float reductions accumulate in a
+# fixed order. Otherwise a reduction can differ in its last ULP run-to-run and
+# flake a tight-tolerance expectation. Test-harness only (real sessions use all
+# cores); applied via configureOutOfCore() at connection setup, so it must be set
+# before the first acquireDuckDBConn() call below.
+options(DuckDBDataFrame.threads = 1L)
+
 # GRanges dataset
 granges_df <- data.frame(id = head(letters, 10L),
                          seqnames = rep.int(c("chr2", "chr2", "chr1", "chr3"), c(1L, 3L, 2L, 4L)),

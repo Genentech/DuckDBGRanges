@@ -168,6 +168,24 @@ test_that("subsetting after logical filtering works correctly", {
     }
 }
 
+test_that("overlap join plans as a range join, not NESTED_LOOP_JOIN (#58)", {
+    # An interval-overlap join is an IEJoin / range-join (equi-on-seqnames plus an
+    # interval inequality), NOT an ASOF join (ASOF is nearest-match and does not
+    # express overlap). DuckDB must not fall back to a NESTED_LOOP_JOIN over the
+    # full cross product, which computes every pair and OOMs on skewed inputs.
+    query <- make_test_query()
+    subject <- make_test_subject()
+    q_ddb <- .gr_to_ddb(query, keycol = seq_len(length(query)))
+    s_ddb <- .gr_to_ddb(subject, keycol = seq_len(length(subject)))
+
+    tbl <- .overlap_join_tbl(q_ddb, s_ddb, ignore.strand = TRUE)
+    plan <- toupper(.explainQuery(tbl))
+    expect_false(grepl("NESTED_LOOP_JOIN", plan, fixed = TRUE))
+    expect_true(grepl("JOIN", plan, fixed = TRUE))
+    # The same lazy tbl still drives the production hits.
+    expect_s4_class(findOverlaps(q_ddb, s_ddb, ignore.strand = TRUE), "Hits")
+})
+
 test_that("findOverlaps with no overlaps returns empty matches", {
     # Adapted from test_findOverlaps_no_overlaps_returns_empty_matches
     query <- make_test_query()

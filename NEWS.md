@@ -1,3 +1,22 @@
+# DuckDBGRanges 0.9.8
+
+## Testing and diagnostics
+
+- Added a query-plan **regression guard** for interval overlaps (no change to
+  overlap results or their current speed). A new internal `.explainQuery()`
+  returns DuckDB's plan for a lazy query, and a test uses it to assert the
+  overlap join stays an IEJoin / range join rather than degrading to a
+  `NESTED_LOOP_JOIN` over the full cross product (which OOMs on skewed inputs).
+  Interval overlap is a range join, not an ASOF (nearest-match) join. The
+  overlap join was factored into an internal `.overlap_join_tbl()` helper so its
+  plan can be inspected without collecting.
+
+# DuckDBGRanges 0.9.7
+
+## Changes
+
+- Relicensed under the MIT License.
+
 # DuckDBGRanges 0.9.6
 
 ## Bug fixes

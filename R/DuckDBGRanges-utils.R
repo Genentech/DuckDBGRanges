@@ -484,6 +484,66 @@ function(q_start, s_start, q_end, s_end, q_strand, s_strand, maxgap = -1L,
     conn
 }
 
+# Build the (unmaterialized) overlap-hit join for two DuckDBGRanges.
+#
+# Split out of findOverlaps(DuckDBGRanges, DuckDBGRanges) so the query plan can
+# be inspected with .explainQuery() without collecting it. The two sides are
+# joined on seqnames (the equi-key) and the interval bounds applied as
+# inequalities: this is an IEJoin / range-join, NOT an ASOF join (ASOF is
+# nearest-match, which does not express interval overlap). Returns a lazy dplyr
+# tbl of (query_idx, subject_idx).
+#' @importFrom dplyr inner_join mutate select arrange
+#' @importFrom dbplyr window_order
+#' @importFrom DuckDBDataFrame tblconn
+.overlap_join_tbl <-
+function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
+{
+    query_select <- setNames(
+        lapply(c("query_idx", "seqnames", "start", "end", "strand"), as.name),
+        c("query_idx", "seqnames", "query_start", "query_end", "query_strand"))
+    query_conn <- tblconn(query@frame)
+    query_conn <- mutate(query_conn, query_idx = row_number())
+    query_conn <- select(query_conn, !!!query_select)
+
+    subject_select <- setNames(
+        lapply(c("subject_idx", "seqnames", "start", "end", "strand"), as.name),
+        c("subject_idx", "seqnames", "subject_start", "subject_end", "subject_strand"))
+    subject_conn <- tblconn(subject@frame)
+    subject_conn <- mutate(subject_conn, subject_idx = row_number())
+    subject_conn <- select(subject_conn, !!!subject_select)
+
+    conditions <- .build_overlap_conditions(
+        q_start = as.name("query_start"),
+        s_start = as.name("subject_start"),
+        q_end = as.name("query_end"),
+        s_end = as.name("subject_end"),
+        q_strand = as.name("query_strand"),
+        s_strand = as.name("subject_strand"),
+        maxgap = maxgap, minoverlap = minoverlap,
+        ignore.strand = ignore.strand)
+
+    result_cols <- lapply(c("query_idx", "subject_idx"), as.name)
+    result <- inner_join(query_conn, subject_conn, by = "seqnames")
+    result <- .apply_overlap_filters(result, conditions)
+    result <- select(result, !!!result_cols)
+    arrange(result, !!!result_cols)
+}
+
+# Return DuckDB's query plan for a lazy dplyr tbl as a single string.
+#
+# A developer diagnostic used to confirm pushdown — most importantly that an
+# interval-overlap join lowers to an IEJoin / piecewise-merge range join rather
+# than a NESTED_LOOP_JOIN over the full cross product (which OOMs on skewed
+# inputs). Note the shape is a range join, NOT an ASOF join (nearest-match).
+#' @importFrom dbplyr remote_con sql_render
+#' @importFrom DBI dbGetQuery
+.explainQuery <- function(lazy_tbl) {
+    con <- remote_con(lazy_tbl)
+    sql <- as.character(sql_render(lazy_tbl))
+    plan <- dbGetQuery(con, paste("EXPLAIN", sql))
+    paste(unlist(plan, use.names = FALSE), collapse = "\n")
+}
+
 # Build a DuckDBGRanges from a dplyr connection with standard GRanges columns
 # 
 # This helper consolidates the common pattern of creating a new DuckDBGRanges
@@ -638,39 +698,10 @@ function(query, subject, maxgap = -1L, minoverlap = 0L,
         return(Hits(nLnode = nq, nRnode = ns))
     }
 
-    # Get query connection with row indices
-    query_select <- setNames(
-        lapply(c("query_idx", "seqnames", "start", "end", "strand"), as.name),
-        c("query_idx", "seqnames", "query_start", "query_end", "query_strand"))
-    query_conn <- tblconn(query@frame)
-    query_conn <- mutate(query_conn, query_idx = row_number())
-    query_conn <- select(query_conn, !!!query_select)
-
-    # Get subject connection with row indices
-    subject_select <- setNames(
-        lapply(c("subject_idx", "seqnames", "start", "end", "strand"), as.name),
-        c("subject_idx", "seqnames", "subject_start", "subject_end", "subject_strand"))
-    subject_conn <- tblconn(subject@frame)
-    subject_conn <- mutate(subject_conn, subject_idx = row_number())
-    subject_conn <- select(subject_conn, !!!subject_select)
-
-    # Build overlap conditions (seqnames handled by inner_join)
-    conditions <- .build_overlap_conditions(
-        q_start = as.name("query_start"),
-        s_start = as.name("subject_start"),
-        q_end = as.name("query_end"),
-        s_end = as.name("subject_end"),
-        q_strand = as.name("query_strand"),
-        s_strand = as.name("subject_strand"),
-        maxgap = maxgap, minoverlap = minoverlap,
-        ignore.strand = ignore.strand)
-
-    # Join on seqnames and filter for overlaps
-    result_cols <- lapply(c("query_idx", "subject_idx"), as.name)
-    result <- inner_join(query_conn, subject_conn, by = "seqnames")
-    result <- .apply_overlap_filters(result, conditions)
-    result <- select(result, !!!result_cols)
-    result <- arrange(result, !!!result_cols)
+    # Build the overlap-hit range-join (seqnames equi-key + interval inequalities)
+    # as a lazy tbl, then materialize. Shared with the .explainQuery plan guard.
+    result <- .overlap_join_tbl(query, subject, maxgap = maxgap,
+        minoverlap = minoverlap, ignore.strand = ignore.strand)
     hits_df <- collect(result)
 
     # Build Hits object

@@ -68,6 +68,10 @@
 #' # Get range per list element
 #' range(grlist)
 #'
+#' @return
+#' \code{range()} returns a DuckDBGRangesList giving the range (minimum start to
+#' maximum end) spanned within each list element, per seqname/strand.
+#'
 #' @aliases
 #' range,DuckDBGRangesList-method
 #'

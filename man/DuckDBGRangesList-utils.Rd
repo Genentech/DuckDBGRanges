@@ -17,6 +17,10 @@ computing operations. Default is \code{FALSE}.}
 
 \item{...}{Additional arguments passed to methods.}
 }
+\value{
+\code{range()} returns a DuckDBGRangesList giving the range (minimum start to
+maximum end) spanned within each list element, per seqname/strand.
+}
 \description{
 Various utility methods for DuckDBGRangesList objects including inter-range
 operations. These methods translate R operations into efficient SQL queries

@@ -1,3 +1,13 @@
+# DuckDBGRanges 0.99.1
+
+## Documentation
+
+- Added `\value` sections (roxygen `@return`) to the `DuckDBGRanges` and
+  `DuckDBGRangesList` class and utility man pages, documenting the values
+  returned by the constructors, accessors, replacement, coercion, and
+  range-operation methods. Resolves the `R CMD BiocCheck` "missing \value"
+  WARNING.
+
 # DuckDBGRanges 0.9.8
 
 ## Testing and diagnostics

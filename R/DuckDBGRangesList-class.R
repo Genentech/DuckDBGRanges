@@ -174,6 +174,18 @@
 #'                             keycol = list(group = c("gr1", "gr2", "gr3", "gr4")))
 #' grlist
 #'
+#' @return
+#' The \code{DuckDBGRangesList()} constructor returns a DuckDBGRangesList object.
+#' Accessors return the requested component (for example \code{seqnames()},
+#' \code{start()}, \code{end()}, \code{width()}, \code{strand()},
+#' \code{length()}, \code{names()}, and \code{seqinfo()}); \code{dbconn()} and
+#' \code{tblconn()} return the backing DuckDB connection. Replacement methods
+#' (such as \code{names<-}, \code{seqlengths<-}, \code{genome<-}, and
+#' \code{dimtbls<-}) return the updated DuckDBGRangesList. Coercion methods
+#' return the corresponding in-memory object (for example a
+#' \link[GenomicRanges]{GRangesList}), and subsetting returns a
+#' DuckDBGRangesList.
+#'
 #' @aliases DuckDBGRangesList-class
 #'
 #' @aliases updateObject,DuckDBGRangesList-method

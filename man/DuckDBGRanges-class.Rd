@@ -32,6 +32,18 @@
 \alias{realize,DuckDBGRanges-method}
 \alias{show,DuckDBGRanges-method}
 \title{DuckDBGRanges objects}
+\value{
+The \code{DuckDBGRanges()} constructor returns a DuckDBGRanges object.
+Accessors return the requested component of the ranges (for example
+\code{seqnames()}, \code{start()}, \code{end()}, \code{width()},
+\code{strand()}, \code{ranges()}, \code{seqinfo()}, \code{length()},
+\code{names()}, and \code{elementMetadata()}); \code{dbconn()} and
+\code{tblconn()} return the backing DuckDB connection. Replacement methods
+(such as \code{seqlengths<-}, \code{genome<-}, and \code{dimtbls<-}) return
+the updated DuckDBGRanges. Coercion methods return the corresponding
+in-memory object (for example a \link[GenomicRanges]{GRanges}), subsetting
+returns a DuckDBGRanges, and the show method returns \code{NULL} invisibly.
+}
 \description{
 The DuckDBGRanges class extends the \linkS4class{GenomicRanges} virtual
 class for DuckDB tables.

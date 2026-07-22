@@ -151,6 +151,19 @@ compatibility).}
 
 \item{...}{Additional arguments passed to methods.}
 }
+\value{
+Overlap methods return a \link[S4Vectors]{Hits} object
+(\code{findOverlaps()}), an integer vector (\code{countOverlaps()}), a
+logical vector (\code{overlapsAny()}), or a DuckDBGRanges
+(\code{subsetByOverlaps()}). Intra-range methods (\code{shift()},
+\code{narrow()}, \code{resize()}, \code{flank()}, \code{promoters()},
+\code{terminators()}) return a \link[GenomicRanges]{GRanges}. Inter-range,
+set-operation, range-restriction, and tiling methods (such as \code{range()}
+and \code{reduce()}) return a DuckDBGRanges (or DuckDBGRangesList where the
+result is grouped). Nearest-neighbor, distance, comparison, and ordering
+methods return the corresponding integer or logical vectors (or a
+\link[S4Vectors]{Hits}).
+}
 \description{
 Various utility methods for DuckDBGRanges objects including overlap detection,
 intra-range transformations, inter-range operations, and comparison methods.

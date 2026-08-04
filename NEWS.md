@@ -1,3 +1,14 @@
+# DuckDBGRanges 0.99.2
+
+## Documentation
+
+- Added `URL` and `BugReports` fields to DESCRIPTION.
+- Added a package-level man page (`?DuckDBGRanges`).
+- Removed the redundant `library(BiocStyle)` call from the vignettes (the
+  `BiocStyle::html_document` output and `::`-qualified helpers apply the style
+  without loading the package). Applied suite-wide for consistency with the
+  Bioconductor review of DuckDBDataFrame.
+
 # DuckDBGRanges 0.99.1
 
 ## Documentation

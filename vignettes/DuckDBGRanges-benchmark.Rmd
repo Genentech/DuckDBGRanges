@@ -30,9 +30,9 @@ follow-up question: **what does that cost, and what does it buy?** We compare th
 DuckDB backend against an in-memory `r Biocpkg("GenomicRanges")` object on two
 range-analysis scenarios at scale:
 
-1. **scATAC-seq peaks** --- a million peak-like intervals a few hundred bases wide,
+1. **scATAC-seq peaks**, a million peak-like intervals a few hundred bases wide,
    the shape of multi-sample consensus peak sets;
-2. **variants** --- ten million SNV-like point positions, the shape of a large
+2. **variants**, ten million SNV-like point positions, the shape of a large
    variant catalogue.
 
 The headline results below were produced **offline** (see [Benchmark setup]) and
@@ -42,14 +42,14 @@ can see the mechanics end to end.
 
 The short version: **DuckDBGRanges wins decisively on memory and on the filtering
 that dominates the early stages of a workflow, while in-memory `GRanges` keeps its
-edge on the interval-tree operations** --- `findOverlaps()`, `subsetByOverlaps()`,
+edge on the interval-tree operations**, `findOverlaps()`, `subsetByOverlaps()`,
 `nearest()`. The two are complementary, which is why the idiomatic pattern is to
 *filter with DuckDB, then materialize to `GRanges`* for overlap work.
 
 # What DuckDBGRanges optimizes
 
 `r Biocpkg("DuckDBGRanges")` turns coordinate and metadata filters into SQL that
-DuckDB pushes into the Parquet reader --- so a region restriction reads only the
+DuckDB pushes into the Parquet reader, so a region restriction reads only the
 matching row groups instead of scanning every range. Existing Bioconductor code
 picks this up automatically: calling `restrict()` on a `DuckDBGRanges` *is* a
 `WHERE` clause, and chained filters compose into a single lazy query.
@@ -91,12 +91,12 @@ ddb <- DuckDBGRanges(path, seqnames = "seqnames", start = "start",
                      end = "end", strand = "strand", mcols = "score")
 
 ## same answer, one in memory and one queried from disk
-r_gr  <- restrict(gr,  start = 1L, end = 500000L)
-r_ddb <- restrict(ddb, start = 1L, end = 500000L)
+system.time(r_gr  <- restrict(gr,  start = 1L, end = 500000L))
+system.time(r_ddb <- restrict(ddb, start = 1L, end = 500000L))
 length(r_gr) == length(r_ddb)
 ```
 
-At this size the in-memory object is faster --- there is nothing to gain from going
+At this size the in-memory object is faster, there is nothing to gain from going
 to disk, and the query has fixed overhead. The advantage appears at scale, which is
 what the offline benchmark measures.
 
@@ -146,30 +146,30 @@ if (is.null(res)) {
 }
 ```
 
-# Main takeaways
+# Summary
 
-- **Memory is the headline.** A `DuckDBGRanges` is a small, constant-size handle
-  (~175 KB) whichever scenario it fronts, while a `GRanges` grows with the number
-  of ranges --- 150x smaller for a million peaks, over 1,500x smaller for ten
-  million variants. This is what lets you *reference* a hundred-million-range
-  catalogue without paying for it until a query touches it.
-- **Filtering favors DuckDB.** `restrict()` and logical subsetting become `WHERE`
-  clauses pushed into the Parquet reader, so they read only matching rows --- the
-  advantage grows with data size (a few times faster at a million peaks, ~13x at
-  ten million variants).
-- **Nearest-feature distance favors DuckDB, strongly.** `distanceToNearest()`
-  runs as an SQL aggregation rather than an interval-tree walk, and is the largest
-  single win measured (~10x at a million peaks, ~70x at ten million variants).
-- **Inter-range transforms are a wash that tips to DuckDB at scale.** `reduce()`
-  and `disjoin()` are close; in-memory `GRanges` edges `reduce()` at a million
-  peaks, but DuckDB pulls ahead on both by ten million ranges (`disjoin()` ~2x).
-- **Overlap enumeration favors GRanges, decisively.** `findOverlaps()` and
-  `subsetByOverlaps()` are backed by in-memory interval trees that a set-based SQL
-  join does not beat (GRanges is ~100x faster here). Hand these to a materialized
-  `GRanges`.
-- **The two compose.** The *filter, then materialize* pattern uses DuckDB to cut a
-  large set down cheaply, then hands the small result to `GRanges` for the
-  interval-tree step --- each backend where it is strongest.
+The two backends have complementary strengths. A `DuckDBGRanges` is a small,
+constant-size handle (about 175 KB) regardless of how many ranges it fronts,
+whereas a `GRanges` grows with the data (roughly 150 times smaller for a million
+peaks, and over 1,500 times smaller for ten million variants). That is what makes
+it practical to reference a very large interval catalogue and pay only for the
+queries you actually run.
+
+Operations that reduce data favor the DuckDB backend. `restrict()` and logical
+subsetting compile to `WHERE` clauses that read only matching rows, and the
+advantage grows with size (a few times faster at a million peaks, about 13 times
+at ten million variants). `distanceToNearest()` runs as an SQL aggregation rather
+than an interval-tree walk, and shows the largest single speedup measured (about
+10 times at a million peaks, about 70 times at ten million variants). The
+inter-range transforms `reduce()` and `disjoin()` are closer: in-memory `GRanges`
+edges out `reduce()` at a million peaks, but DuckDB pulls ahead on both by ten
+million ranges.
+
+Overlap enumeration favors `GRanges`. `findOverlaps()` and `subsetByOverlaps()`
+rely on in-memory interval trees that a set-based SQL join does not match
+(`GRanges` is roughly 100 times faster), so those are best run on a materialized
+`GRanges`. In practice the two compose well: use DuckDB to filter a large set down
+cheaply, then hand the small result to `GRanges` for the interval-tree work.
 
 # Backend comparison
 
@@ -186,9 +186,9 @@ if (is.null(res)) {
 
 ## When to use each
 
-- **`GRanges`** --- data fits comfortably in RAM; the fastest choice for
+- **`GRanges`**, data fits comfortably in RAM; the fastest choice for
   overlap-heavy work and small-to-mid range sets.
-- **`DuckDBGRanges`** --- larger-than-memory interval sets, filter-heavy pipelines,
+- **`DuckDBGRanges`**, larger-than-memory interval sets, filter-heavy pipelines,
   keeping a huge annotation referenceable at constant memory cost, or when the
   Parquet files are shared with non-R tooling. Combine with `GRanges` via *filter,
   then materialize*.

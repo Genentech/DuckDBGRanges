@@ -60,11 +60,11 @@ showClass("DuckDBGRanges")
 
 A `DuckDBGRanges` carries three slots:
 
-- **`frame`** --- a `DuckDBDataFrame` with the coordinate columns (see [The five
+- **`frame`**, a `DuckDBDataFrame` with the coordinate columns (see [The five
   required columns]). Extra columns become metadata columns.
-- **`seqinfo`** --- a `Seqinfo` with sequence lengths and genome build, kept
+- **`seqinfo`**, a `Seqinfo` with sequence lengths and genome build, kept
   materialized (it is small and needed for validation).
-- **`elementMetadata`** --- an optional `DuckDBDataFrame` of metadata columns
+- **`elementMetadata`**, an optional `DuckDBDataFrame` of metadata columns
   (`mcols`) sharing the same backend as `frame`.
 
 `DuckDBGRangesList` has the same slots, but its coordinate columns are DuckDB
@@ -112,7 +112,7 @@ operations that map cleanly onto set-based queries into SQL on the underlying
 crosses back into R.
 
 **Coordinate filters** (`restrict()`, logical subsetting) become `WHERE`
-clauses, which DuckDB pushes into the Parquet reader --- so a region filter reads
+clauses, which DuckDB pushes into the Parquet reader, so a region filter reads
 only the matching row groups instead of scanning everything:
 
 ```sql
@@ -142,7 +142,7 @@ END AS distance
 FROM ranges_a a, ranges_b b
 ```
 
-Filters compose lazily --- a chain of `restrict()` and logical subsets becomes a
+Filters compose lazily, a chain of `restrict()` and logical subsets becomes a
 single query, evaluated only when results are pulled. Operations without a natural
 set-based form fall back to materializing the (already filtered) ranges to an
 in-memory `GRanges`, which is correct for any input and cheap once the data has
@@ -184,7 +184,7 @@ elementNROWS(grl_ddb)
 # Materialization and interoperability
 
 A `DuckDBGRanges` coerces to an ordinary `GRanges` with `as(x, "GRanges")`, which
-runs the accumulated query and reads the result into memory --- the *materialize*
+runs the accumulated query and reads the result into memory, the *materialize*
 half of the *filter, then materialize* pattern. Coercion is how overlap-heavy
 work is handed off to the in-memory interval-tree algorithms.
 
@@ -193,7 +193,7 @@ as(gr_ddb[seqnames(gr_ddb) == "chr1"], "GRanges")
 ```
 
 Because the on-disk representation is plain Parquet, the same files are readable
-outside R (Python, Julia, DuckDB itself, cloud query engines) --- the property the
+outside R (Python, Julia, DuckDB itself, cloud query engines), the property the
 `r Biocpkg("BiocDuckDB")` package relies on for its language-neutral on-disk
 experiment format. A new range-bearing backend mostly needs to define how its
 data maps onto the five coordinate columns and which operations to push into SQL;

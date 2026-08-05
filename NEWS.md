@@ -10,6 +10,17 @@
   Updated the `importFrom`/`exportMethods` entries, the `DuckDBGRanges` and
   `DuckDBGRangesList` method definitions, and all call sites. Requires the
   renamed version of DuckDBDataFrame.
+- Replaced `sapply(..., simplify = FALSE)` with `setNames(lapply(...), ...)` in
+  the `mcols` normalization (preserving the element names), and `1:h` with
+  `seq_len(h)` in the display method, resolving the corresponding `R CMD
+  BiocCheck` NOTEs.
+- Used `system2()` instead of `system()` in `inst/scripts/run_vignette_benchmarks.R`.
+
+## Documentation
+
+- Benchmarking vignette: wrapped the live comparison in `system.time()` so the
+  runtimes are visible, and rewrote the summary section as prose.
+- Replaced em dashes with commas (or parentheses) in the vignettes.
 
 # DuckDBGRanges 0.99.2
 

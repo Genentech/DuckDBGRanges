@@ -423,7 +423,7 @@ function(conn, seqnames, start = NULL, end = NULL, width = NULL, strand = NULL,
         mcols <- NULL
     } else {
         if (is.character(mcols)) {
-            mcols <- sapply(mcols, as.name, simplify = FALSE)
+            mcols <- setNames(lapply(mcols, as.name), mcols)
         }
         mcols <- as.expression(mcols)
         ccols <- c(ccols, mcols)

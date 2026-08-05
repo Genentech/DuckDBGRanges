@@ -27,12 +27,12 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>",
 Genomic workflows routinely produce interval sets that are awkward to hold in
 memory: a gnomAD-scale variant catalogue is hundreds of millions of positions, a
 multi-sample scATAC-seq study is millions of peaks, a comprehensive gene model is
-millions of exons. Loading the whole set into an R session --- alongside the
-intermediate objects an analysis creates --- is wasteful when a workflow only ever
+millions of exons. Loading the whole set into an R session, alongside the
+intermediate objects an analysis creates, is wasteful when a workflow only ever
 touches a region, a chromosome, or the ranges passing a metadata filter.
 
 `r Biocpkg("GenomicRanges")` is the standard Bioconductor representation for such
-data, and its API --- `seqnames()`, `start()`, `restrict()`, `findOverlaps()` ---
+data, and its API (`seqnames()`, `start()`, `restrict()`, `findOverlaps()`)
 is what most genomic code is written against. What varies is *where the data
 lives*: an ordinary `GRanges` holds every range in memory.
 
@@ -171,7 +171,7 @@ findOverlaps(sub_gr, GRanges("chr1:100-320"))
 
 Grouped features (a transcript's exons, a gene's peaks) are held by a
 `DuckDBGRangesList`, which stores each group's coordinates as DuckDB `LIST[]`
-columns --- one row per group --- and behaves like a `GRangesList`:
+columns, one row per group, and behaves like a `GRangesList`:
 
 ```{r grangeslist}
 grl_data <- data.frame(
@@ -196,17 +196,17 @@ grl_ddb[[1]]
 # When to use DuckDBGRanges
 
 A good fit when the interval set is **larger than memory** (or you want to keep
-memory free), when the workload is **filter-heavy** --- restricting to regions,
-chromosomes, or metadata thresholds before the expensive step --- or when the data
+memory free), when the workload is **filter-heavy**, restricting to regions,
+chromosomes, or metadata thresholds before the expensive step, or when the data
 already lives on disk as **Parquet** that other tools (Python, Julia, cloud query
 engines) can read. Because the R object is a constant ~175 KB, a `DuckDBGRanges`
 also lets you *reference* a huge annotation without paying for it until a query
 touches it.
 
 An in-memory `GRanges` remains preferable when the data fits comfortably in RAM,
-and for **overlap enumeration** --- `findOverlaps()`, `subsetByOverlaps()` ---
+and for **overlap enumeration** (`findOverlaps()`, `subsetByOverlaps()`),
 where the in-memory interval trees are hard to beat. (Filtering and
-`distanceToNearest()`, by contrast, are faster on the DuckDB backend --- see the
+`distanceToNearest()`, by contrast, are faster on the DuckDB backend, see the
 benchmarking vignette.) The two compose well: the *filter, then materialize*
 pattern above uses each where it is strongest.
 

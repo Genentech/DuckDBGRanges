@@ -426,7 +426,7 @@ function(conn, seqnames, start = NULL, end = NULL, width = NULL, strand = NULL,
         mcols <- NULL
     } else {
         if (is.character(mcols)) {
-            mcols <- sapply(mcols, as.name, simplify = FALSE)
+            mcols <- setNames(lapply(mcols, as.name), mcols)
         }
         mcols <- as.expression(mcols)
         ccols <- c(ccols, mcols)
@@ -607,7 +607,7 @@ setMethod("show", "DuckDBGRanges", function(object) {
         if (k > 0L) {
             nc <- ncol(m)
             h <- nc - k
-            m <- cbind(m[, 1:h, drop = FALSE],
+            m <- cbind(m[, seq_len(h), drop = FALSE],
                        `|` = ifelse(rownames(m) == "...", ".", "|"),
                        m[, (h + 1L):nc, drop = FALSE])
         }

@@ -570,7 +570,7 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
 #   Defaults to list(seqnames, strand, start). Pass NULL to skip ordering.
 # @return A new DuckDBGRanges object
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
-#' @importFrom DuckDBDataFrame .set_row_number
+#' @importFrom DuckDBDataFrame set_row_number
 #' @importFrom dbplyr window_order
 #' @importFrom dplyr mutate
 #' @importFrom S4Vectors new2
@@ -596,7 +596,7 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
         strand = strand
     )
     
-    keycols <- list(row_number = .set_row_number(conn))
+    keycols <- list(row_number = set_row_number(conn))
     
     new_frame <- new2("DuckDBDataFrame",
                       conn = conn,
@@ -870,7 +870,7 @@ function(query, subject, maxgap = -1L, minoverlap = 0L,
 # Helper to get logical vector of overlapping DuckDBGRanges elements
 #' @importFrom bit64 as.integer64 is.integer64
 #' @importFrom dplyr collect copy_to distinct inner_join pull select tbl
-#' @importFrom DuckDBDataFrame .has_row_number tblconn
+#' @importFrom DuckDBDataFrame has_row_number tblconn
 .overlapsAny_DuckDBGRanges <-
 function(query, subject, maxgap, minoverlap, type, ignore.strand = FALSE)
 {
@@ -892,7 +892,7 @@ function(query, subject, maxgap, minoverlap, type, ignore.strand = FALSE)
     # Get keycol info from query
     frame <- query@frame
     keycol_name <- names(frame@keycols)
-    has_row_num <- .has_row_number(frame)
+    has_row_num <- has_row_number(frame)
 
     # Get query connection with keycol and range columns
     query_select <- setNames(
@@ -1398,7 +1398,7 @@ function(x, upstream = 2000, downstream = 200, use.names = TRUE)
 
 #' @export
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
-#' @importFrom DuckDBDataFrame .set_row_number tblconn
+#' @importFrom DuckDBDataFrame set_row_number tblconn
 #' @importFrom dplyr distinct group_by mutate row_number summarize
 #' @importFrom Seqinfo seqinfo
 #' @importFrom S4Vectors new2
@@ -1462,7 +1462,7 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
     )
 
     # Create keycols
-    keycols <- list(row_number = .set_row_number(new_conn))
+    keycols <- list(row_number = set_row_number(new_conn))
 
     # Create new DuckDBDataFrame
     new_frame <- new2("DuckDBDataFrame",
@@ -2394,7 +2394,7 @@ function(x, use.names = TRUE, ...)
 
 #' @export
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
-#' @importFrom DuckDBDataFrame .set_row_number tblconn
+#' @importFrom DuckDBDataFrame set_row_number tblconn
 #' @importFrom dplyr copy_to filter left_join mutate select
 #' @importFrom IRanges restrict
 #' @importFrom S4Vectors new2
@@ -2495,7 +2495,7 @@ function(x, start = NA, end = NA, keep.all.ranges = FALSE, use.names = TRUE)
         strand = strand
     )
 
-    keycols <- list(row_number = .set_row_number(conn))
+    keycols <- list(row_number = set_row_number(conn))
 
     new_frame <- new2("DuckDBDataFrame",
                       conn = conn,
@@ -2953,7 +2953,7 @@ function(x, with.revmap = FALSE, ignore.strand = FALSE)
 
 #' @export
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
-#' @importFrom DuckDBDataFrame .set_row_number tblconn
+#' @importFrom DuckDBDataFrame set_row_number tblconn
 #' @importFrom dplyr union_all
 #' @importFrom S4Vectors new2
 setMethod("union", c("DuckDBGRanges", "DuckDBGRanges"),
@@ -3002,7 +3002,7 @@ function(x, y, ignore.strand = FALSE)
         strand = strand
     )
 
-    keycols <- list(row_number = .set_row_number(combined))
+    keycols <- list(row_number = set_row_number(combined))
 
     new_frame <- new2("DuckDBDataFrame",
                       conn = combined,

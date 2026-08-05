@@ -192,8 +192,8 @@
 #'
 #' @aliases dbconn,DuckDBGRangesList-method
 #' @aliases tblconn,DuckDBGRangesList-method
-#' @aliases .keycols,DuckDBGRangesList-method
-#' @aliases .has_row_number,DuckDBGRangesList-method
+#' @aliases keycols,DuckDBGRangesList-method
+#' @aliases has_row_number,DuckDBGRangesList-method
 #' @aliases dimtbls,DuckDBGRangesList-method
 #' @aliases dimtbls<-,DuckDBGRangesList-method
 #' @aliases length,DuckDBGRangesList-method
@@ -272,12 +272,12 @@ setMethod("tblconn", "DuckDBGRangesList", function(x, select = TRUE, filter = TR
 })
 
 #' @export
-#' @importFrom DuckDBDataFrame .keycols
-setMethod(".keycols", "DuckDBGRangesList", function(x) callGeneric(x@frame))
+#' @importFrom DuckDBDataFrame keycols
+setMethod("keycols", "DuckDBGRangesList", function(x) callGeneric(x@frame))
 
 #' @export
-#' @importFrom DuckDBDataFrame .has_row_number
-setMethod(".has_row_number", "DuckDBGRangesList", function(x) callGeneric(x@frame))
+#' @importFrom DuckDBDataFrame has_row_number
+setMethod("has_row_number", "DuckDBGRangesList", function(x) callGeneric(x@frame))
 
 #' @export
 setMethod("dimtbls", "DuckDBGRangesList", function(x, drop = TRUE) {

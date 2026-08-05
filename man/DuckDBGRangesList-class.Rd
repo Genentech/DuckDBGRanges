@@ -5,8 +5,8 @@
 \alias{updateObject,DuckDBGRangesList-method}
 \alias{dbconn,DuckDBGRangesList-method}
 \alias{tblconn,DuckDBGRangesList-method}
-\alias{.keycols,DuckDBGRangesList-method}
-\alias{.has_row_number,DuckDBGRangesList-method}
+\alias{keycols,DuckDBGRangesList-method}
+\alias{has_row_number,DuckDBGRangesList-method}
 \alias{dimtbls,DuckDBGRangesList-method}
 \alias{dimtbls<-,DuckDBGRangesList-method}
 \alias{length,DuckDBGRangesList-method}

@@ -1,3 +1,16 @@
+# DuckDBGRanges 0.99.3
+
+## Follow-up review changes
+
+- Adopted the undotted names for the shared BiocDuckDB internal generics, per the
+  Bioconductor guideline that `.`-prefixed names should not be exported:
+  `.keycols` -> `keycols`, `.has_row_number` -> `has_row_number`,
+  `.set_row_number` -> `set_row_number`, and
+  `.makePrettyCharacterMatrixForDisplay` -> `makePrettyCharacterMatrixForDisplay`.
+  Updated the `importFrom`/`exportMethods` entries, the `DuckDBGRanges` and
+  `DuckDBGRangesList` method definitions, and all call sites. Requires the
+  renamed version of DuckDBDataFrame.
+
 # DuckDBGRanges 0.99.2
 
 ## Documentation

@@ -4,8 +4,8 @@
 \alias{DuckDBGRanges-class}
 \alias{dbconn,DuckDBGRanges-method}
 \alias{tblconn,DuckDBGRanges-method}
-\alias{.keycols,DuckDBGRanges-method}
-\alias{.has_row_number,DuckDBGRanges-method}
+\alias{keycols,DuckDBGRanges-method}
+\alias{has_row_number,DuckDBGRanges-method}
 \alias{dimtbls,DuckDBGRanges-method}
 \alias{dimtbls<-,DuckDBGRanges-method}
 \alias{length,DuckDBGRanges-method}

@@ -206,8 +206,8 @@
 #'
 #' @aliases dbconn,DuckDBGRanges-method
 #' @aliases tblconn,DuckDBGRanges-method
-#' @aliases .keycols,DuckDBGRanges-method
-#' @aliases .has_row_number,DuckDBGRanges-method
+#' @aliases keycols,DuckDBGRanges-method
+#' @aliases has_row_number,DuckDBGRanges-method
 #' @aliases dimtbls,DuckDBGRanges-method
 #' @aliases dimtbls<-,DuckDBGRanges-method
 #' @aliases length,DuckDBGRanges-method
@@ -277,12 +277,12 @@ setMethod("tblconn", "DuckDBGRanges", function(x, select = TRUE, filter = TRUE) 
 })
 
 #' @export
-#' @importFrom DuckDBDataFrame .keycols
-setMethod(".keycols", "DuckDBGRanges", function(x) callGeneric(x@frame))
+#' @importFrom DuckDBDataFrame keycols
+setMethod("keycols", "DuckDBGRanges", function(x) callGeneric(x@frame))
 
 #' @export
-#' @importFrom DuckDBDataFrame .has_row_number
-setMethod(".has_row_number", "DuckDBGRanges", function(x) callGeneric(x@frame))
+#' @importFrom DuckDBDataFrame has_row_number
+setMethod("has_row_number", "DuckDBGRanges", function(x) callGeneric(x@frame))
 
 #' @export
 #' @importFrom DuckDBDataFrame dimtbls
@@ -554,7 +554,7 @@ function(x, row.names = NULL, optional = FALSE, ...) {
 #' @export
 #' @importClassesFrom GenomicRanges GRanges
 #' @importClassesFrom S4Vectors DFrame
-#' @importFrom DuckDBDataFrame .has_row_number
+#' @importFrom DuckDBDataFrame has_row_number
 #' @importFrom Seqinfo seqinfo
 #' @importFrom GenomicRanges GRanges
 #' @importFrom IRanges IRanges
@@ -564,7 +564,7 @@ setAs("DuckDBGRanges", "GRanges", function(from) {
 
     seqnames <- Rle(df[["seqnames"]])
     ranges <- IRanges(start = df[["start"]], width = df[["width"]])
-    if (!.has_row_number(from)) {
+    if (!has_row_number(from)) {
         names(ranges) <- rownames(df)
     }
     strand <- strand(df[["strand"]])
@@ -598,11 +598,11 @@ function(x, BACKEND = getAutoRealizationBackend()) {
 
 #' @export
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
-#' @importFrom DuckDBDataFrame .makePrettyCharacterMatrixForDisplay
+#' @importFrom DuckDBDataFrame makePrettyCharacterMatrixForDisplay
 setMethod("show", "DuckDBGRanges", function(object) {
     cat(summary(object), ":\n", sep = "")
     if (length(object) > 0L) {
-        m <- .makePrettyCharacterMatrixForDisplay(as(object, "DuckDBDataFrame"))
+        m <- makePrettyCharacterMatrixForDisplay(as(object, "DuckDBDataFrame"))
         k <- NCOL(object@elementMetadata)
         if (k > 0L) {
             nc <- ncol(m)

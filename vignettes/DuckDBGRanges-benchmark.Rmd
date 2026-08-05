@@ -30,9 +30,9 @@ follow-up question: **what does that cost, and what does it buy?** We compare th
 DuckDB backend against an in-memory `r Biocpkg("GenomicRanges")` object on two
 range-analysis scenarios at scale:
 
-1. **scATAC-seq peaks**, a million peak-like intervals a few hundred bases wide,
+1. **scATAC-seq peaks**: a million peak-like intervals a few hundred bases wide,
    the shape of multi-sample consensus peak sets;
-2. **variants**, ten million SNV-like point positions, the shape of a large
+2. **variants**: ten million SNV-like point positions, the shape of a large
    variant catalogue.
 
 The headline results below were produced **offline** (see [Benchmark setup]) and

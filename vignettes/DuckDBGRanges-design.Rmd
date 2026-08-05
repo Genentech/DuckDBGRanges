@@ -60,11 +60,11 @@ showClass("DuckDBGRanges")
 
 A `DuckDBGRanges` carries three slots:
 
-- **`frame`**, a `DuckDBDataFrame` with the coordinate columns (see [The five
+- **`frame`**: a `DuckDBDataFrame` with the coordinate columns (see [The five
   required columns]). Extra columns become metadata columns.
-- **`seqinfo`**, a `Seqinfo` with sequence lengths and genome build, kept
+- **`seqinfo`**: a `Seqinfo` with sequence lengths and genome build, kept
   materialized (it is small and needed for validation).
-- **`elementMetadata`**, an optional `DuckDBDataFrame` of metadata columns
+- **`elementMetadata`**: an optional `DuckDBDataFrame` of metadata columns
   (`mcols`) sharing the same backend as `frame`.
 
 `DuckDBGRangesList` has the same slots, but its coordinate columns are DuckDB

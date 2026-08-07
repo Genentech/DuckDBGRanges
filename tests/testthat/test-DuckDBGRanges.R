@@ -3149,11 +3149,86 @@ test_that("pgap works correctly", {
     
     result_ddb <- pgap(ddb_gr1, ddb_gr2)
     result_gr <- pgap(gr1, gr2)
-    
-    expect_s4_class(result_ddb, "GRanges")
-    expect_equal(length(result_ddb), length(result_gr))
-    
+
+    checkDuckDBGRanges(result_ddb, result_gr)
+
+    # checkDuckDBGRanges() skips value comparison for a row-number-keyed
+    # result (pgap()'s result, like range()/reduce()'s, has no names), so
+    # compare the materialized coordinates positionally.
+    got <- as.data.frame(as(result_ddb, "GRanges"))[, c("seqnames", "start", "end", "width", "strand")]
+    want <- as.data.frame(result_gr)[, c("seqnames", "start", "end", "width", "strand")]
+    rownames(got) <- NULL
+    rownames(want) <- NULL
+    expect_identical(got, want)
+
     unlink(c(tf1, tf2))
+})
+
+test_that("pgap errors on incompatible seqnames", {
+    df1 <- data.frame(id = "a", seqnames = "chr1", start = 10L, end = 50L,
+                      strand = "+", stringsAsFactors = FALSE)
+    df2 <- data.frame(id = "x", seqnames = "chr2", start = 60L, end = 90L,
+                      strand = "+", stringsAsFactors = FALSE)
+
+    tf1 <- tempfile(fileext = ".parquet")
+    tf2 <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(df1, tf1)
+    arrow::write_parquet(df2, tf2)
+
+    ddb_gr1 <- DuckDBGRanges(tf1, seqnames = "seqnames",
+                             start = "start", end = "end", strand = "strand",
+                             keycol = "id")
+    ddb_gr2 <- DuckDBGRanges(tf2, seqnames = "seqnames",
+                             start = "start", end = "end", strand = "strand",
+                             keycol = "id")
+
+    expect_error(pgap(ddb_gr1, ddb_gr2), "compatible")
+
+    unlink(c(tf1, tf2))
+})
+
+test_that("pgap errors on incompatible strand unless ignore.strand", {
+    df1 <- data.frame(id = "a", seqnames = "chr1", start = 10L, end = 50L,
+                      strand = "+", stringsAsFactors = FALSE)
+    df2 <- data.frame(id = "x", seqnames = "chr1", start = 60L, end = 90L,
+                      strand = "-", stringsAsFactors = FALSE)
+
+    tf1 <- tempfile(fileext = ".parquet")
+    tf2 <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(df1, tf1)
+    arrow::write_parquet(df2, tf2)
+
+    ddb_gr1 <- DuckDBGRanges(tf1, seqnames = "seqnames",
+                             start = "start", end = "end", strand = "strand",
+                             keycol = "id")
+    ddb_gr2 <- DuckDBGRanges(tf2, seqnames = "seqnames",
+                             start = "start", end = "end", strand = "strand",
+                             keycol = "id")
+
+    expect_error(pgap(ddb_gr1, ddb_gr2), "compatible")
+
+    result_ddb <- pgap(ddb_gr1, ddb_gr2, ignore.strand = TRUE)
+    result_gr <- pgap(as(ddb_gr1, "GRanges"), as(ddb_gr2, "GRanges"), ignore.strand = TRUE)
+    checkDuckDBGRanges(result_ddb, result_gr)
+
+    unlink(c(tf1, tf2))
+})
+
+test_that("pgap requires an explicit keycol", {
+    df <- data.frame(seqnames = c("chr1", "chr1"), start = c(10L, 100L),
+                     end = c(50L, 150L), strand = c("+", "+"),
+                     stringsAsFactors = FALSE)
+
+    tf <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(df, tf)
+
+    ddb_rownum <- DuckDBGRanges(tf, seqnames = "seqnames",
+                                start = "start", end = "end", strand = "strand")
+    expect_true(has_row_number(ddb_rownum@frame))
+
+    expect_error(pgap(ddb_rownum, ddb_rownum), "keycol")
+
+    unlink(tf)
 })
 
 test_that("pgap with overlapping ranges works", {
@@ -3190,11 +3265,11 @@ test_that("pgap with overlapping ranges works", {
     
     result_ddb <- pgap(ddb_gr1, ddb_gr2)
     result_gr <- pgap(gr1, gr2)
-    
-    expect_s4_class(result_ddb, "GRanges")
+
+    checkDuckDBGRanges(result_ddb, result_gr)
     # For overlapping ranges, the gap width should be 0
-    expect_equal(width(result_ddb), width(result_gr))
-    
+    expect_equal(unname(as.vector(width(result_ddb))), width(result_gr))
+
     unlink(c(tf1, tf2))
 })
 
@@ -3230,13 +3305,15 @@ test_that("pgap with mixed types works", {
     gr1 <- as(ddb_gr1, "GRanges")
     gr2 <- as(ddb_gr2, "GRanges")
     
+    result_gr <- pgap(gr1, gr2)
+
     # Test DuckDBGRanges, GRanges
     result_mixed1 <- pgap(ddb_gr1, gr2)
-    expect_s4_class(result_mixed1, "GRanges")
-    
+    checkDuckDBGRanges(result_mixed1, result_gr)
+
     # Test GRanges, DuckDBGRanges
     result_mixed2 <- pgap(gr1, ddb_gr2)
-    expect_s4_class(result_mixed2, "GRanges")
-    
+    checkDuckDBGRanges(result_mixed2, result_gr)
+
     unlink(c(tf1, tf2))
 })

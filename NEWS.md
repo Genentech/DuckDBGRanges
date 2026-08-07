@@ -1,3 +1,45 @@
+# DuckDBGRanges 0.99.4
+
+## Bug fixes
+
+- `pgap(x="DuckDBGRanges", y="DuckDBGRanges")` is rewritten as a genuine, lazy
+  SQL implementation (no `collect()`). Previously the method built a SQL
+  pipeline for the non-overlapping-gap case, discarded it unused, and always
+  fell back to materializing both inputs and delegating to
+  `IRanges::pgap()`; every call, including through the `DuckDBGRanges,GRanges`
+  and `GRanges,DuckDBGRanges` methods, paid for a wasted SQL round trip and
+  never stayed lazy despite otherwise participating in the package's SQL
+  pushdown design. Also fixes a latent return-type inconsistency where a
+  zero-length call returned a `DuckDBGRanges` while every other call returned
+  a `GRanges`.
+  - The gap formula (`start = min(end(x), end(y)) + 1`,
+    `end = max(max(start(x), start(y)) - 1, min(end(x), end(y)))`) matches
+    `IRanges:::pgap,IntegerRanges,IntegerRanges`, including its convention of
+    a zero-width range at the boundary for overlapping or adjacent pairs.
+  - `x[i]`/`y[i]` are paired by each object's own recorded key values via
+    `.add_keycol_indices()` (the same mechanism `.setup_nearest_neighbor_join()`
+    uses for `nearest()`/`precede()`/`follow()`), not a plain `row_number()`;
+    a plain `row_number()` has no guaranteed correspondence to a table's
+    logical row order across separate query executions and can silently
+    mispair rows. Row-number-keyed (no explicit `keycol`) `DuckDBGRanges`
+    inputs now error clearly rather than risk a silently wrong pairing.
+  - `x[i]`/`y[i]` compatibility (matching `seqnames`, and unless
+    `ignore.strand`, compatible `strand`) is validated in SQL, erroring like
+    `IRanges::pgap()` on a mismatch; the new `ignore.strand` argument is
+    threaded through the `DuckDBGRanges,GRanges`/`GRanges,DuckDBGRanges`
+    methods as well.
+  - The result is ordered to match the original `x`/`y` pairing rather than
+    the lazy-builder helper's default coordinate sort, which would otherwise
+    silently permute the result.
+  - The result is now a lazy `DuckDBGRanges`, consistent with `range()` and
+    `reduce()`, rather than a materialized `GRanges`.
+
+## Testing
+
+- Updated the `pgap()` tests for the `DuckDBGRanges` return type and added
+  coverage for the seqnames/strand compatibility errors (including
+  `ignore.strand`) and the row-number-keyed guard.
+
 # DuckDBGRanges 0.99.3
 
 ## Follow-up review changes

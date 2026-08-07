@@ -425,10 +425,13 @@ Methods for dividing ranges into sub-ranges:
     Generate sliding windows of specified 'width' moving by 'step' positions.
     Returns a GRangesList. Note: materializes data for processing.
   }
-  \item{\code{pgap(x, y)}:}{
-    Compute pairwise gaps between ranges in x and y. For each pair, returns
-    the gap region between the two ranges (empty if overlapping).
-    Returns a GRanges object.
+  \item{\code{pgap(x, y, ignore.strand=FALSE)}:}{
+    Compute pairwise gaps between ranges in x and y, entirely in SQL. For
+    each pair, returns the gap region between the two ranges, or a
+    zero-width range at the boundary if they overlap or are adjacent.
+    Errors if a pair has incompatible seqnames, or (unless
+    \code{ignore.strand}) incompatible strand. Returns a DuckDBGRanges
+    object.
   }
 }
 }

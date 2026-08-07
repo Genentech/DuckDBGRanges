@@ -11,6 +11,7 @@ exportMethods("genome<-")
 exportMethods("names<-")
 exportMethods("seqlengths<-")
 exportMethods(as.data.frame)
+exportMethods(coerce)
 exportMethods(countOverlaps)
 exportMethods(dbconn)
 exportMethods(dimtbls)
@@ -83,120 +84,141 @@ importClassesFrom(GenomicRanges,GRangesList)
 importClassesFrom(GenomicRanges,GenomicRanges)
 importClassesFrom(S4Vectors,DFrame)
 importClassesFrom(Seqinfo,Seqinfo)
-importFrom(DBI,dbGetQuery)
-importFrom(DBI,dbQuoteIdentifier)
-importFrom(DBI,dbQuoteLiteral)
-importFrom(DelayedArray,getAutoRealizationBackend)
-importFrom(DelayedArray,realize)
-importFrom(DuckDBDataFrame,"dimtbls<-")
-importFrom(DuckDBDataFrame,DuckDBDataFrame)
-importFrom(DuckDBDataFrame,dimtbls)
-importFrom(DuckDBDataFrame,has_row_number)
-importFrom(DuckDBDataFrame,keycols)
-importFrom(DuckDBDataFrame,makePrettyCharacterMatrixForDisplay)
-importFrom(DuckDBDataFrame,set_row_number)
-importFrom(DuckDBDataFrame,sql_call)
-importFrom(DuckDBDataFrame,tblconn)
-importFrom(GenomicRanges,GRanges)
-importFrom(GenomicRanges,GRangesList)
-importFrom(GenomicRanges,duplicated)
-importFrom(GenomicRanges,end)
-importFrom(GenomicRanges,match)
-importFrom(GenomicRanges,seqinfo)
-importFrom(GenomicRanges,seqnames)
-importFrom(GenomicRanges,start)
-importFrom(GenomicRanges,strand)
-importFrom(GenomicRanges,terminators)
-importFrom(IRanges,IRanges)
-importFrom(IRanges,countOverlaps)
-importFrom(IRanges,disjoin)
-importFrom(IRanges,distance)
-importFrom(IRanges,distanceToNearest)
-importFrom(IRanges,findOverlaps)
-importFrom(IRanges,flank)
-importFrom(IRanges,follow)
-importFrom(IRanges,gaps)
-importFrom(IRanges,narrow)
-importFrom(IRanges,nearest)
-importFrom(IRanges,overlapsAny)
-importFrom(IRanges,pgap)
-importFrom(IRanges,pintersect)
-importFrom(IRanges,precede)
-importFrom(IRanges,promoters)
-importFrom(IRanges,psetdiff)
-importFrom(IRanges,punion)
-importFrom(IRanges,ranges)
-importFrom(IRanges,reduce)
-importFrom(IRanges,resize)
-importFrom(IRanges,restrict)
-importFrom(IRanges,shift)
-importFrom(IRanges,slidingWindows)
-importFrom(IRanges,subsetByOverlaps)
-importFrom(IRanges,tile)
-importFrom(IRanges,trim)
-importFrom(S4Vectors,"elementMetadata<-")
-importFrom(S4Vectors,"mcols<-")
-importFrom(S4Vectors,"metadata<-")
-importFrom(S4Vectors,DataFrame)
-importFrom(S4Vectors,Hits)
-importFrom(S4Vectors,Rle)
-importFrom(S4Vectors,classNameForDisplay)
-importFrom(S4Vectors,countQueryHits)
-importFrom(S4Vectors,elementMetadata)
-importFrom(S4Vectors,elementNROWS)
-importFrom(S4Vectors,endoapply)
-importFrom(S4Vectors,extractROWS)
-importFrom(S4Vectors,getListElement)
-importFrom(S4Vectors,head)
-importFrom(S4Vectors,isSingleNumber)
-importFrom(S4Vectors,isSingleString)
-importFrom(S4Vectors,isTRUEorFALSE)
-importFrom(S4Vectors,make_zero_col_DFrame)
-importFrom(S4Vectors,mcols)
-importFrom(S4Vectors,metadata)
-importFrom(S4Vectors,new2)
-importFrom(S4Vectors,selectHits)
-importFrom(S4Vectors,setValidity2)
-importFrom(S4Vectors,split)
-importFrom(S4Vectors,tail)
-importFrom(Seqinfo,"genome<-")
-importFrom(Seqinfo,"seqlengths<-")
-importFrom(Seqinfo,Seqinfo)
-importFrom(Seqinfo,isCircular)
-importFrom(Seqinfo,seqinfo)
-importFrom(Seqinfo,seqlengths)
-importFrom(Seqinfo,seqlevels)
-importFrom(Seqinfo,seqnames)
-importFrom(bit64,as.integer64)
-importFrom(bit64,is.integer64)
-importFrom(dbplyr,remote_con)
-importFrom(dbplyr,sql_render)
-importFrom(dbplyr,window_order)
-importFrom(dplyr,all_of)
-importFrom(dplyr,arrange)
-importFrom(dplyr,case_when)
-importFrom(dplyr,coalesce)
-importFrom(dplyr,collect)
-importFrom(dplyr,copy_to)
-importFrom(dplyr,count)
-importFrom(dplyr,dense_rank)
-importFrom(dplyr,desc)
-importFrom(dplyr,distinct)
-importFrom(dplyr,filter)
-importFrom(dplyr,group_by)
-importFrom(dplyr,if_else)
-importFrom(dplyr,inner_join)
-importFrom(dplyr,lag)
-importFrom(dplyr,left_join)
-importFrom(dplyr,mutate)
-importFrom(dplyr,n)
-importFrom(dplyr,pull)
-importFrom(dplyr,rename)
-importFrom(dplyr,row_number)
-importFrom(dplyr,select)
-importFrom(dplyr,sql)
-importFrom(dplyr,summarize)
-importFrom(dplyr,tbl)
-importFrom(dplyr,ungroup)
-importFrom(dplyr,union_all)
+importFrom(DBI,
+  dbGetQuery,
+  dbQuoteIdentifier,
+  dbQuoteLiteral
+)
+importFrom(DelayedArray,
+  getAutoRealizationBackend,
+  realize
+)
+importFrom(DuckDBDataFrame,
+  "dimtbls<-",
+  DuckDBDataFrame,
+  dbconn,
+  dimtbls,
+  has_row_number,
+  keycols,
+  makePrettyCharacterMatrixForDisplay,
+  set_row_number,
+  sql_call,
+  tblconn
+)
+importFrom(GenomicRanges,
+  GRanges,
+  GRangesList,
+  duplicated,
+  end,
+  match,
+  seqinfo,
+  seqnames,
+  start,
+  strand,
+  terminators
+)
+importFrom(IRanges,
+  IRanges,
+  countOverlaps,
+  disjoin,
+  distance,
+  distanceToNearest,
+  findOverlaps,
+  flank,
+  follow,
+  gaps,
+  narrow,
+  nearest,
+  overlapsAny,
+  pgap,
+  pintersect,
+  precede,
+  promoters,
+  psetdiff,
+  punion,
+  ranges,
+  reduce,
+  resize,
+  restrict,
+  shift,
+  slidingWindows,
+  subsetByOverlaps,
+  tile,
+  trim
+)
+importFrom(S4Vectors,
+  "elementMetadata<-",
+  "mcols<-",
+  "metadata<-",
+  DataFrame,
+  Hits,
+  Rle,
+  classNameForDisplay,
+  countQueryHits,
+  elementMetadata,
+  elementNROWS,
+  endoapply,
+  extractROWS,
+  getListElement,
+  head,
+  isSingleNumber,
+  isSingleString,
+  isTRUEorFALSE,
+  make_zero_col_DFrame,
+  mcols,
+  metadata,
+  new2,
+  selectHits,
+  setValidity2,
+  split,
+  tail
+)
+importFrom(Seqinfo,
+  "genome<-",
+  "seqlengths<-",
+  Seqinfo,
+  isCircular,
+  seqinfo,
+  seqlengths,
+  seqlevels,
+  seqnames
+)
+importFrom(bit64,
+  as.integer64,
+  is.integer64
+)
+importFrom(dbplyr,
+  remote_con,
+  sql_render,
+  window_order
+)
+importFrom(dplyr,
+  all_of,
+  arrange,
+  case_when,
+  coalesce,
+  collect,
+  copy_to,
+  count,
+  dense_rank,
+  desc,
+  distinct,
+  filter,
+  group_by,
+  if_else,
+  inner_join,
+  lag,
+  left_join,
+  mutate,
+  n,
+  pull,
+  rename,
+  row_number,
+  select,
+  sql,
+  summarize,
+  tbl,
+  ungroup,
+  union_all
+)
 importFrom(stats,setNames)

@@ -240,10 +240,13 @@
 #'     Generate sliding windows of specified 'width' moving by 'step' positions.
 #'     Returns a GRangesList. Note: materializes data for processing.
 #'   }
-#'   \item{\code{pgap(x, y)}:}{
-#'     Compute pairwise gaps between ranges in x and y. For each pair, returns
-#'     the gap region between the two ranges (empty if overlapping).
-#'     Returns a GRanges object.
+#'   \item{\code{pgap(x, y, ignore.strand=FALSE)}:}{
+#'     Compute pairwise gaps between ranges in x and y, entirely in SQL. For
+#'     each pair, returns the gap region between the two ranges, or a
+#'     zero-width range at the boundary if they overlap or are adjacent.
+#'     Errors if a pair has incompatible seqnames, or (unless
+#'     \code{ignore.strand}) incompatible strand. Returns a DuckDBGRanges
+#'     object.
 #'   }
 #' }
 #'
@@ -3965,125 +3968,105 @@ function(x, width, step = 1L)
 ###
 
 #' @export
-#' @importFrom DuckDBDataFrame tblconn
+#' @importFrom DuckDBDataFrame dbconn has_row_number tblconn
 #' @importFrom IRanges pgap
-#' @importFrom dbplyr window_order
-#' @importFrom dplyr mutate filter select arrange row_number collect inner_join
-#' @importFrom S4Vectors new2
+#' @importFrom S4Vectors isTRUEorFALSE
+#' @importFrom dplyr inner_join mutate pull select summarize
 setMethod("pgap", c("DuckDBGRanges", "DuckDBGRanges"),
-function(x, y)
+function(x, y, ignore.strand = FALSE, ...)
 {
-    n <- length(x)
-    if (n != length(y))
+    if (length(x) != length(y))
         stop("'x' and 'y' must have the same length")
-    
-    if (n == 0L) {
-        return(x[integer(0)])
-    }
-    
-    # Get connections and database connection
+
+    if (!isTRUEorFALSE(ignore.strand))
+        stop("'ignore.strand' must be TRUE or FALSE")
+
+    if (length(x) == 0L)
+        return(x)
+
+    if (has_row_number(x@frame) || has_row_number(y@frame))
+        stop("pgap() requires 'x' and 'y' to have an explicit keycol; ",
+             "row-number-keyed DuckDBGRanges are not supported")
+
     x_frame <- x@frame
     x_conn <- tblconn(x_frame)
     db_conn <- dbconn(x_frame)
-    
+
     y_frame <- y@frame
     y_conn <- tblconn(y_frame)
-    
-    # Add keycol-based indices
-    x_conn <- .add_keycol_indices(x_conn, x_frame, db_conn, "x_idx", "pgap_x")
-    y_conn <- .add_keycol_indices(y_conn, y_frame, db_conn, "y_idx", "pgap_y")
-    
-    # Rename y columns
-    y_rename <- list(
-        y_seqnames = as.name("seqnames"),
-        y_start = as.name("start"),
-        y_end = as.name("end"),
-        y_strand = as.name("strand")
-    )
-    y_conn <- mutate(y_conn, !!!y_rename)
-    y_select <- lapply(c("y_idx", "y_seqnames", "y_start", "y_end", "y_strand"), as.name)
-    y_conn <- select(y_conn, !!!y_select)
-    
-    # Join by index (pairwise operation)
-    joined <- inner_join(x_conn, y_conn, by = c("x_idx" = "y_idx"))
-    
-    # Compute gap: the region between end(x) and start(y)
-    # If x ends before y starts: gap = (end_x + 1) to (start_y - 1)
-    # If y ends before x starts: gap = (end_y + 1) to (start_x - 1)
-    # If overlapping: no gap (we'll handle this by filtering)
-    
-    # pgap returns the gap between the two ranges
-    # gap_start = max(end_x, end_y) + 1
-    # gap_end = min(start_x, start_y) - 1
-    # But only if gap_end >= gap_start
-    
-    # Actually, pgap works differently - it assumes ranges don't overlap and
-    # returns the gap between x[i] end and y[i] start (or vice versa)
-    # The convention is: gap from min(end_x, end_y)+1 to max(start_x, start_y)-1
-    
-    # More precisely: gap between ranges is from (end of first) + 1 to (start of second) - 1
-    # We need to figure out which one comes first
-    gap_expr <- list(
-        gap_start = call("+", call("least", as.name("end"), as.name("y_end")), 1L),
-        gap_end = call("-", call("greatest", as.name("start"), as.name("y_start")), 1L)
-    )
-    joined <- mutate(joined, !!!gap_expr)
-    
-    # Filter to valid gaps (where gap_end >= gap_start)
-    filter_valid <- list(call(">=", as.name("gap_end"), as.name("gap_start")))
-    valid_gaps <- filter(joined, !!!filter_valid)
-    
-    # Select and rename
-    select_cols <- list(
-        seqnames = as.name("seqnames"),
-        start = as.name("gap_start"),
-        end = as.name("gap_end"),
-        strand = as.name("strand"),
-        x_idx = as.name("x_idx")
-    )
-    valid_gaps <- mutate(valid_gaps, !!!select_cols)
-    result_cols <- lapply(c("x_idx", "seqnames", "start", "end", "strand"), as.name)
-    valid_gaps <- select(valid_gaps, !!!result_cols)
-    
-    # Compute width and add row_number
-    width_mutate <- list(
-        width = call("+", call("-", as.name("end"), as.name("start")), 1L)
-    )
-    valid_gaps <- mutate(valid_gaps, !!!width_mutate)
-    
-    # Use window_order() to set ordering for row_number() window function
-    valid_gaps <- window_order(valid_gaps, !!as.name("x_idx"))
-    
-    # Add row_number
-    rownum_mutate <- list(row_number = call("row_number"))
-    valid_gaps <- mutate(valid_gaps, !!!rownum_mutate)
-    
-    # Collect to check which indices have gaps
-    result_df <- collect(valid_gaps)
-    
-    # Create output - we need to return n ranges, some may be zero-width
-    # For ranges with no gap (overlapping), we return a zero-width range
-    # at position end(x) + 1 (or start(y) - 1, depending on convention)
-    
-    # Actually, let's check what GRanges::pgap does for overlapping ranges
-    # and match that behavior. For simplicity, materialize and use GRanges.
-    gr_x <- as(x, "GRanges")
-    gr_y <- as(y, "GRanges")
-    pgap(gr_x, gr_y)
+
+    x_conn <- .add_keycol_indices(x_conn, x_frame, db_conn, ".row_idx", "pgap_x")
+    y_conn <- .add_keycol_indices(y_conn, y_frame, db_conn, ".row_idx", "pgap_y")
+    y_select_list <- setNames(
+        lapply(c(".row_idx", "seqnames", "start", "end", "strand"), as.name),
+        c(".row_idx", "y_seqnames", "y_start", "y_end", "y_strand"))
+    y_conn <- select(y_conn, !!!y_select_list)
+
+    joined <- inner_join(x_conn, y_conn, by = ".row_idx", copy = TRUE)
+
+    # pgap()'s gap formula (matching IRanges:::pgap,IntegerRanges,IntegerRanges):
+    # new_start = min(end(x), end(y)) + 1; the naive gap end, max(start(x),
+    # start(y)) - 1, is clamped up to (new_start - 1) so an overlapping or
+    # adjacent pair collapses to a zero-width range at the boundary instead of
+    # a negative-width one.
+    new_start_expr <- call("+", call("least", as.name("end"), as.name("y_end")), 1L)
+    naive_end_expr <- call("-", call("greatest", as.name("start"), as.name("y_start")), 1L)
+    new_end_expr <- call("greatest", naive_end_expr,
+                         call("least", as.name("end"), as.name("y_end")))
+
+    # pgap() requires x[i]/y[i] to have compatible seqnames (equal) and, unless
+    # ignore.strand, compatible strand ('*' matches any strand). The strand
+    # sub-expression is wrapped in an explicit call("(", .) because dbplyr's
+    # SQL translation does not parenthesize a '|' operand of '&' on its own,
+    # which would otherwise silently change AND/OR precedence in the rendered
+    # SQL (verified against dbplyr::sql_render()).
+    compat_expr <- call("==", as.name("seqnames"), as.name("y_seqnames"))
+    if (!ignore.strand) {
+        strand_ok <- call("(", call("|",
+            call("|", call("==", as.name("strand"), "*"),
+                     call("==", as.name("y_strand"), "*")),
+            call("==", as.name("strand"), as.name("y_strand"))))
+        compat_expr <- call("&", compat_expr, strand_ok)
+    }
+
+    coord_mutate <- list(new_start = new_start_expr, new_end = new_end_expr,
+                         compatible = compat_expr)
+    joined <- mutate(joined, !!!coord_mutate)
+
+    n_bad_expr <- call("sum", call("as.integer", call("!", as.name("compatible"))), na.rm = TRUE)
+    n_bad <- pull(summarize(joined, !!!setNames(list(n_bad_expr), "n_bad")))
+    if (isTRUE(n_bad > 0L))
+        stop("'x' and 'y' elements must have compatible 'seqnames' and 'strand' values")
+
+    new_width_expr <- call("+", call("-", as.name("new_end"), as.name("new_start")), 1L)
+    joined <- mutate(joined, new_width = !!new_width_expr)
+
+    # Retain .row_idx so the result can be ordered to match the original
+    # x[i]/y[i] pairing; .build_DuckDBGRanges()'s datacols expression below
+    # doesn't name it, so it never becomes a visible column of the result.
+    select_rename_list <- setNames(
+        lapply(c(".row_idx", "seqnames", "strand", "new_start", "new_end", "new_width"), as.name),
+        c(".row_idx", "seqnames", "strand", "start", "end", "width"))
+    joined <- select(joined, !!!select_rename_list)
+
+    # pgap() is positional (result[i] is the gap of x[i]/y[i]): order by the
+    # pairing index rather than .build_DuckDBGRanges()'s default coordinate
+    # sort, which would silently permute the result relative to x/y.
+    .build_DuckDBGRanges(joined, seqinfo(x), order_by = list(as.name(".row_idx")))
 })
 
 #' @export
 setMethod("pgap", c("DuckDBGRanges", "GRanges"),
-function(x, y)
+function(x, y, ignore.strand = FALSE, ...)
 {
     y_ddb <- .granges_to_duckdb(y, x)
-    pgap(x, y_ddb)
+    pgap(x, y_ddb, ignore.strand = ignore.strand, ...)
 })
 
 #' @export
 setMethod("pgap", c("GRanges", "DuckDBGRanges"),
-function(x, y)
+function(x, y, ignore.strand = FALSE, ...)
 {
     x_ddb <- .granges_to_duckdb(x, y)
-    pgap(x_ddb, y)
+    pgap(x_ddb, y, ignore.strand = ignore.strand, ...)
 })

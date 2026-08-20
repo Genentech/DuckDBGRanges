@@ -46,8 +46,8 @@ gr_ddb[seqnames(gr_ddb) == "chr1" & gr_ddb$score > 12]   # lazy, on-disk filter
 ```
 
 Standard `GRanges` accessors and range operations (`restrict()`, `reduce()`,
-`shift()`, ...) work as usual; `as(x, "GRanges")` materializes a (typically
-filtered) subset into memory.
+`shift()`, `coverage()`, ...) work as usual; `as(x, "GRanges")` materializes a
+(typically filtered) subset into memory.
 
 ## Performance
 
@@ -59,7 +59,7 @@ result, comparing in-memory `GRanges` with `DuckDBGRanges`:
 | Object footprint | proportional to N | **constant (~175 KB; 150–1500x smaller)** |
 | Region / metadata filtering | scans all ranges | **predicate pushdown (2–13x faster)** |
 | `distanceToNearest` | interval trees | **SQL aggregation (10–70x faster)** |
-| `reduce` / `disjoin` | optimized C | SQL (comparable; faster at scale) |
+| `reduce` / `disjoin` / `coverage` | optimized C | SQL (comparable; faster at scale) |
 | `findOverlaps` / `subsetByOverlaps` | **interval trees (fast)** | SQL join (slower) |
 
 The idiomatic **hybrid workflow** plays to both strengths:

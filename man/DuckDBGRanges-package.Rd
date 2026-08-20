@@ -5,7 +5,7 @@
 \alias{DuckDBGRanges-package}
 \title{DuckDBGRanges: DuckDB-Backed GenomicRanges Implementation}
 \description{
-Provides DuckDB-backed implementations of GenomicRanges data structures for efficient, out-of-memory operations on large genomic interval datasets. The package includes DuckDBGRanges and DuckDBGRangesList classes with optimized range operations including restrict, flank, shift, findOverlaps, and distance calculations. Ideal for variant analysis, scATAC-seq peak analysis, and other genomic workflows requiring memory-efficient range operations on large datasets.
+Provides DuckDB-backed implementations of GenomicRanges data structures for efficient, out-of-memory operations on large genomic interval datasets. The package includes DuckDBGRanges and DuckDBGRangesList classes with optimized range operations including restrict, flank, shift, findOverlaps, coverage, and distance calculations. Ideal for variant analysis, scATAC-seq peak analysis, and other genomic workflows requiring memory-efficient range operations on large datasets.
 }
 \seealso{
 Useful links:

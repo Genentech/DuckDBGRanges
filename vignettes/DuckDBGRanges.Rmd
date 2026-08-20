@@ -151,6 +151,13 @@ restrict(gr_ddb, start = 200L, end = 300L)
 reduce(gr_ddb)
 ```
 
+`coverage()` computes per-base depth the same way, entirely in SQL, and returns
+an ordinary (small) `RleList`, one run-length-encoded vector per seqname:
+
+```{r coverage}
+coverage(gr_ddb)
+```
+
 ## Filter, then materialize
 
 The idiomatic workflow uses DuckDB to shrink a large set to the ranges of

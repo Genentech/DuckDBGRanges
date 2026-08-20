@@ -1,3 +1,30 @@
+# DuckDBGRanges 0.99.5
+
+## New features
+
+- Added `coverage()` for `DuckDBGRanges`, computed lazily via the same
+  delta-event + window-function `cumsum()` sweep-line pattern already used by
+  `disjoin()`/`gaps()`: only the compact per-seqname breakpoint table is
+  collected (bounded by the number of ranges, never by genome length), and a
+  real `SimpleRleList` is built from it, matching
+  `GenomicRanges::coverage()`'s value type (integer unless a non-integer
+  `weight` is used). `shift` and `width` (per-seqlevel, truncating or
+  zero-padding) are supported, including clipping a range that lands (partly
+  or entirely) before position 1 after `shift`, exactly as
+  `GenomicRanges::coverage()` does, rather than erroring. `weight` is
+  scalar-only for now (a per-range vector or mcols-column-name weight is not
+  supported, and errors clearly rather than risking a silent row-order
+  misalignment).
+
+## Bug fixes
+
+- Previously, calling `coverage()` on a `DuckDBGRanges` object crashed with a
+  C stack overflow: with no `coverage()` method of its own, it inherited
+  `coverage,GenomicRanges-method`, which calls
+  `split(ranges(x), seqnames(x))`, and `ranges,DuckDBGRanges-method` returns
+  a `DuckDBDataFrame` rather than real `IRanges`. The new method above takes
+  priority via S4 dispatch, so this no longer happens.
+
 # DuckDBGRanges 0.99.4
 
 ## Bug fixes

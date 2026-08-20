@@ -1886,6 +1886,210 @@ test_that("disjoin produces correct breakpoints", {
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### coverage() tests
+###
+
+.write_coverage_fixture <- function(gr) {
+    df <- as.data.frame(gr)
+    df$seqnames <- as.character(df$seqnames)
+    df$strand <- as.character(df$strand)
+    tf <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(df, tf)
+    tf
+}
+
+test_that("coverage matches GRanges for overlapping ranges with mixed strand", {
+    gr <- GRanges(c("chr1", "chr1", "chr2"), IRanges(c(1, 5, 1), c(10, 15, 5)),
+                  strand = c("+", "-", "+"))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    # strand is ignored by coverage(): the +/- pair over the same interval
+    # sums into a single depth track, not two separate ones.
+    expect_equal(as.list(coverage(ddb_gr)), as.list(coverage(gr)),
+                 check.attributes = FALSE)
+
+    unlink(tf)
+})
+
+test_that("coverage matches GRanges with a leading gap and an isolated range", {
+    gr <- GRanges("chr1", IRanges(c(5, 8, 20), c(10, 12, 20)))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    expect_equal(as.list(coverage(ddb_gr)), as.list(coverage(gr)),
+                 check.attributes = FALSE)
+
+    unlink(tf)
+})
+
+test_that("coverage includes seqlevels with no ranges", {
+    gr <- GRanges("chr1", IRanges(1, 10))
+    seqlevels(gr) <- c("chr1", "chr2", "chr3")
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    result_ddb <- coverage(ddb_gr)
+    result_gr <- coverage(gr)
+    expect_identical(names(result_ddb), names(result_gr))
+    expect_equal(as.list(result_ddb), as.list(result_gr), check.attributes = FALSE)
+
+    unlink(tf)
+})
+
+test_that("coverage respects seqlengths (zero-padding)", {
+    gr <- GRanges(c("chr1", "chr1"), IRanges(c(1, 5), c(10, 15)))
+    seqlengths(gr) <- c(chr1 = 20L)
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    expect_equal(as.list(coverage(ddb_gr)), as.list(coverage(gr)),
+                 check.attributes = FALSE)
+
+    unlink(tf)
+})
+
+test_that("coverage supports a scalar weight", {
+    gr <- GRanges(c("chr1", "chr1"), IRanges(c(1, 5), c(10, 15)))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    expect_equal(as.list(coverage(ddb_gr, weight = 2)),
+                 as.list(coverage(gr, weight = 2)), check.attributes = FALSE)
+
+    unlink(tf)
+})
+
+test_that("coverage errors clearly for a non-scalar weight", {
+    gr <- GRanges("chr1", IRanges(c(1, 5), c(10, 15)))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    expect_error(coverage(ddb_gr, weight = c(1, 2)), "single number")
+
+    unlink(tf)
+})
+
+test_that("coverage supports shift and width overrides (truncate and pad)", {
+    gr <- GRanges(c("chr1", "chr1"), IRanges(c(1, 5), c(10, 15)))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    expect_equal(as.list(coverage(ddb_gr, shift = 3L)),
+                 as.list(coverage(gr, shift = 3L)), check.attributes = FALSE)
+    expect_equal(as.list(coverage(ddb_gr, width = c(chr1 = 5L))),
+                 as.list(coverage(gr, width = c(chr1 = 5L))), check.attributes = FALSE)
+    expect_equal(as.list(coverage(ddb_gr, width = c(chr1 = 30L))),
+                 as.list(coverage(gr, width = c(chr1 = 30L))), check.attributes = FALSE)
+
+    unlink(tf)
+})
+
+test_that("coverage clips negative shift to position 1, matching GRanges", {
+    # GRanges::coverage() clips the portion of a shifted range that falls
+    # before position 1 rather than erroring; a range shifted entirely
+    # before 1 contributes nothing at all.
+    gr <- GRanges("chr1", IRanges(5, 10))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    expect_equal(as.list(coverage(ddb_gr, shift = -3L)),
+                 as.list(coverage(gr, shift = -3L)), check.attributes = FALSE)
+    expect_equal(as.list(coverage(ddb_gr, shift = -4L)),
+                 as.list(coverage(gr, shift = -4L)), check.attributes = FALSE)
+    expect_equal(as.list(coverage(ddb_gr, shift = -10L)),
+                 as.list(coverage(gr, shift = -10L)), check.attributes = FALSE)
+
+    unlink(tf)
+})
+
+test_that("coverage clips negative shift for a multi-range input", {
+    gr <- GRanges(c("chr1", "chr1"), IRanges(c(5, 20), c(10, 25)))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    expect_equal(as.list(coverage(ddb_gr, shift = -7L)),
+                 as.list(coverage(gr, shift = -7L)), check.attributes = FALSE)
+
+    unlink(tf)
+})
+
+test_that("coverage value type matches GRanges (integer unless weight is non-integer)", {
+    gr <- GRanges("chr1", IRanges(5, 10))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    expect_identical(class(coverage(ddb_gr)[["chr1"]]), class(coverage(gr)[["chr1"]]))
+    expect_true(is.integer(runValue(coverage(ddb_gr)[["chr1"]])))
+
+    expect_identical(class(coverage(ddb_gr, weight = 2L)[["chr1"]]),
+                     class(coverage(gr, weight = 2L)[["chr1"]]))
+    expect_true(is.integer(runValue(coverage(ddb_gr, weight = 2L)[["chr1"]])))
+
+    expect_identical(class(coverage(ddb_gr, weight = 2)[["chr1"]]),
+                     class(coverage(gr, weight = 2)[["chr1"]]))
+    expect_true(is.double(runValue(coverage(ddb_gr, weight = 2)[["chr1"]])))
+
+    unlink(tf)
+})
+
+test_that("coverage works for empty DuckDBGRanges", {
+    seqinfo <- Seqinfo(seqnames = "chr1", seqlengths = 1000L)
+    empty_df <- data.frame(seqnames = character(0), start = integer(0),
+                           end = integer(0), strand = character(0))
+    empty_tf <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(empty_df, empty_tf)
+    ddb_empty <- DuckDBGRanges(empty_tf, seqnames = "seqnames",
+                               start = "start", end = "end", strand = "strand",
+                               seqinfo = seqinfo)
+
+    result <- coverage(ddb_empty)
+    expect_s4_class(result, "SimpleRleList")
+    expect_identical(names(result), "chr1")
+    expect_identical(as.integer(result[["chr1"]]), rep(0L, 1000L))
+
+    unlink(empty_tf)
+})
+
+test_that("coverage no longer stack-overflows on a real fixture (regression)", {
+    # Previously, coverage() inherited from GenomicRanges and crashed via
+    # split(ranges(x), seqnames(x)) recursing on a DuckDBDataFrame.
+    gr <- GRanges("chr1", IRanges(1, 10))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    result <- coverage(ddb_gr)
+    expect_s4_class(result, "SimpleRleList")
+
+    unlink(tf)
+})
+
+test_that("coverage plans as an aggregation, not a cross/nested-loop join", {
+    gr <- GRanges("chr1", IRanges(c(1, 5), c(10, 15)))
+    tf <- .write_coverage_fixture(gr)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", seqinfo = seqinfo(gr))
+
+    tbl <- .coverage_events_tbl(ddb_gr, seqlevels(ddb_gr), 0L, 1L)
+    plan <- toupper(.explainQuery(tbl))
+    expect_false(grepl("NESTED_LOOP_JOIN", plan, fixed = TRUE))
+    expect_false(grepl("CROSS_JOIN", plan, fixed = TRUE))
+
+    unlink(tf)
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### Set operations tests: union(), intersect(), setdiff()
 ###
 

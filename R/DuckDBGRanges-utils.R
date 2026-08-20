@@ -100,6 +100,19 @@
 #'     Returns a DuckDBGRanges object.
 #'     Note: \code{with.revmap} is not supported.
 #'   }
+#'   \item{\code{coverage(x, shift=0L, width=NULL, weight=1L, method=c("auto", "sort", "hash"), ...)}:}{
+#'     Compute per-base coverage depth per seqname (strand is ignored, as in
+#'     \code{GenomicRanges::coverage}). Uses the same delta-event and
+#'     window-function \code{cumsum()} SQL as \code{disjoin()}/\code{gaps()},
+#'     collecting only the compact per-seqname breakpoint table before
+#'     building a \code{SimpleRleList}. \code{shift} and \code{width} are
+#'     recycled per seqlevel; a range shifted so that it falls (partly or
+#'     entirely) before position 1 is clipped to position 1, matching
+#'     \code{GenomicRanges::coverage} rather than erroring. \code{method} is
+#'     accepted for API compatibility and ignored. Note: \code{weight} must be
+#'     a single number; a per-range vector or an mcols column name is not
+#'     supported.
+#'   }
 #' }
 #'
 #' @section Set Operations:
@@ -374,6 +387,7 @@
 #' @aliases reduce,DuckDBGRanges-method
 #' @aliases gaps,DuckDBGRanges-method
 #' @aliases disjoin,DuckDBGRanges-method
+#' @aliases coverage,DuckDBGRanges-method
 #' @aliases union,DuckDBGRanges,DuckDBGRanges-method
 #' @aliases union,DuckDBGRanges,GRanges-method
 #' @aliases union,GRanges,DuckDBGRanges-method
@@ -613,6 +627,17 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
          seqinfo = seqinfo,
          elementMetadata = new("DFrame", nrows = nrow(new_frame)),
          check = FALSE)
+}
+
+# Recycle a start/end/shift/width-style per-seqlevel argument, matching a
+# named vector up to seqlevels order or recycling an unnamed one. Shared by
+# gaps() and coverage().
+.recycle_per_seqlevel <- function(val, seqlevels) {
+    if (!is.null(names(val)))
+        val <- val[seqlevels]
+    val <- rep_len(val, length(seqlevels))
+    names(val) <- seqlevels
+    val
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2659,13 +2684,8 @@ function(x, start = 1L, end = seqlengths(x), ignore.strand = FALSE)
     x_seqlengths <- seqlengths(x)
 
     # Normalize start and end vectors
-    if (!is.null(names(start)))
-        start <- start[x_seqlevels]
-    if (!is.null(names(end)))
-        end <- end[x_seqlevels]
-
-    start <- rep_len(as.integer(start), length(x_seqlevels))
-    end <- rep_len(as.integer(end), length(x_seqlevels))
+    start <- as.integer(.recycle_per_seqlevel(start, x_seqlevels))
+    end <- as.integer(.recycle_per_seqlevel(end, x_seqlevels))
     names(start) <- x_seqlevels
     names(end) <- x_seqlevels
 
@@ -2946,6 +2966,172 @@ function(x, with.revmap = FALSE, ignore.strand = FALSE)
     result <- mutate(result, !!!width_mutate)
 
     .build_DuckDBGRanges(result, seqinfo(x))
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### coverage()
+###
+### Per-base coverage depth per seqname. Strand is ignored, matching
+### GenomicRanges::coverage() (a position's read depth does not split by
+### strand). Uses the same delta-event + window-function cumsum() sweep-line
+### pattern as disjoin()/gaps(), but keeps the running sum itself instead of
+### thresholding it, and turns the compact per-breakpoint result (bounded by
+### the number of ranges, never by genome length) into a run-length encoding.
+###
+
+# Reconstruct a SimpleRleList from coverage()'s compact per-seqname breakpoint
+# table (columns: seqnames, bp, depth; one row per position where the summed
+# delta is non-zero-or-not, sorted by bp within seqname). By construction the
+# last breakpoint for each seqname always has depth 0 (every start event has a
+# matching end event), so it is used only to close the final run, never
+# emitted itself; a leading zero run is added when the first breakpoint is
+# after position 1. `width` is a named-by-seqlevel vector (NA entries mean
+# "natural extent": stop exactly at the last covered position). `int_values`
+# controls whether runs are stored as integer or numeric, matching
+# GenomicRanges::coverage()'s own contract (integer unless a non-integer
+# 'weight' is used) -- DuckDB's SUM()/cumsum() always return a double
+# regardless of the input type, so this is not just cosmetic.
+#' @importFrom IRanges RleList
+#' @importFrom S4Vectors Rle window
+.breakpoints_to_rlelist <- function(breakpoints, seqlevels, width, int_values) {
+    zero <- if (int_values) 0L else 0
+    rles <- lapply(seqlevels, function(sn) {
+        w <- width[[sn]]
+        rows <- breakpoints[breakpoints$seqnames == sn, , drop = FALSE]
+        if (nrow(rows) == 0L)
+            return(Rle(zero, if (is.na(w)) 0L else w))
+
+        bp <- rows$bp
+        depth <- rows$depth
+        if (int_values) depth <- as.integer(depth)
+        n <- length(bp)
+
+        # bp is guaranteed >= 1 by the clipping done in .coverage_events_tbl().
+        values <- depth[-n]
+        lengths <- diff(bp)
+        if (bp[1L] > 1L) {
+            values <- c(zero, values)
+            lengths <- c(bp[1L] - 1L, lengths)
+        }
+        rle <- Rle(values = values, lengths = lengths)
+
+        if (!is.na(w)) {
+            if (length(rle) < w) {
+                rle <- c(rle, Rle(zero, w - length(rle)))
+            } else if (length(rle) > w) {
+                rle <- window(rle, start = 1L, end = w)
+            }
+        }
+        rle
+    })
+    names(rles) <- seqlevels
+    RleList(rles, compress = FALSE)
+}
+
+# Build the lazy per-(seqname, breakpoint) running-depth tbl for coverage(),
+# without collecting it -- exposed separately so tests can inspect its query
+# plan the same way .overlap_join_tbl() does for findOverlaps(). Ranges are
+# clipped to positions >= 1 after 'shift' is applied (matching
+# GenomicRanges::coverage(), which silently drops the portion of a shifted
+# range that falls before position 1, rather than erroring): a range that
+# lands entirely before 1 is dropped, and one that straddles 1 has its start
+# event clipped up to 1.
+.coverage_events_tbl <- function(x, x_seqlevels, shift, weight) {
+    frame <- x@frame
+    conn <- tblconn(frame)
+    db_conn <- dbconn(frame)
+
+    shift_df <- data.frame(seqnames = x_seqlevels, .shift = shift,
+                           stringsAsFactors = FALSE)
+    shift_tbl <- copy_to(db_conn, shift_df,
+                         name = paste0("coverage_shift_", sample.int(1e6, 1)),
+                         temporary = TRUE, overwrite = TRUE)
+
+    conn <- inner_join(conn, shift_tbl, by = "seqnames")
+
+    # Drop ranges that land entirely before position 1 after shifting.
+    conn <- filter(conn, !!!list(
+        call(">=", call("+", as.name("end"), as.name(".shift")), 1L)
+    ))
+
+    # Start events: +weight at max(start + shift, 1); end events: -weight at
+    # (end + shift + 1).
+    start_events <- mutate(conn, !!!list(
+        bp = call("greatest", call("+", as.name("start"), as.name(".shift")), 1L)
+    ))
+    start_events <- select(start_events, !!!list(
+        seqnames = as.name("seqnames"),
+        bp = as.name("bp")
+    ))
+    start_events <- mutate(start_events, !!!list(delta = weight))
+
+    end_events <- mutate(conn, !!!list(
+        bp = call("+", call("+", as.name("end"), as.name(".shift")), 1L)
+    ))
+    end_events <- select(end_events, !!!list(
+        seqnames = as.name("seqnames"),
+        bp = as.name("bp")
+    ))
+    end_events <- mutate(end_events, !!!list(delta = -weight))
+
+    all_events <- union_all(start_events, end_events)
+
+    agg_group_cols <- list(as.name("seqnames"), as.name("bp"))
+    all_events <- group_by(all_events, !!!agg_group_cols)
+    all_events <- summarize(all_events,
+        !!!list(delta = call("sum", as.name("delta"), na.rm = TRUE)),
+        .groups = "drop")
+
+    all_events <- group_by(all_events, !!!list(as.name("seqnames")))
+    all_events <- window_order(all_events, !!as.name("bp"))
+    all_events <- mutate(all_events,
+        !!!list(depth = call("cumsum", as.name("delta"))))
+    all_events <- ungroup(all_events)
+
+    arrange(all_events, !!!list(as.name("seqnames"), as.name("bp")))
+}
+
+#' @export
+#' @importFrom dbplyr window_order
+#' @importFrom dplyr arrange collect copy_to filter group_by inner_join mutate
+#' @importFrom dplyr select summarize ungroup union_all
+#' @importFrom DuckDBDataFrame dbconn tblconn
+#' @importFrom IRanges coverage
+#' @importFrom S4Vectors Rle
+#' @importFrom Seqinfo seqlengths seqlevels
+setMethod("coverage", "DuckDBGRanges",
+function(x, shift = 0L, width = NULL, weight = 1L,
+         method = c("auto", "sort", "hash"), ...)
+{
+    if (!is.numeric(weight) || length(weight) != 1L || is.na(weight))
+        stop("'weight' must be a single number for DuckDBGRanges ",
+             "(a per-range or mcols-column 'weight' is not supported)")
+    int_values <- is.integer(weight)
+
+    x_seqlevels <- seqlevels(x)
+    x_seqlengths <- seqlengths(x)
+
+    shift <- as.integer(.recycle_per_seqlevel(shift, x_seqlevels))
+    width <- if (is.null(width)) x_seqlengths
+             else as.integer(.recycle_per_seqlevel(width, x_seqlevels))
+    names(width) <- x_seqlevels
+
+    if (length(x) == 0L) {
+        zero <- if (int_values) 0L else 0
+        rles <- lapply(width, function(w) Rle(zero, if (is.na(w)) 0L else w))
+        names(rles) <- x_seqlevels
+        return(RleList(rles, compress = FALSE))
+    }
+
+    all_events <- .coverage_events_tbl(x, x_seqlevels, shift, weight)
+
+    breakpoints <- collect(select(all_events, !!!list(
+        seqnames = as.name("seqnames"),
+        bp = as.name("bp"),
+        depth = as.name("depth")
+    )))
+
+    .breakpoints_to_rlelist(breakpoints, x_seqlevels, width, int_values)
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

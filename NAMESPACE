@@ -13,6 +13,7 @@ exportMethods("seqlengths<-")
 exportMethods(as.data.frame)
 exportMethods(coerce)
 exportMethods(countOverlaps)
+exportMethods(coverage)
 exportMethods(dbconn)
 exportMethods(dimtbls)
 exportMethods(disjoin)
@@ -119,7 +120,9 @@ importFrom(GenomicRanges,
 )
 importFrom(IRanges,
   IRanges,
+  RleList,
   countOverlaps,
+  coverage,
   disjoin,
   distance,
   distanceToNearest,
@@ -171,7 +174,8 @@ importFrom(S4Vectors,
   selectHits,
   setValidity2,
   split,
-  tail
+  tail,
+  window
 )
 importFrom(Seqinfo,
   "genome<-",

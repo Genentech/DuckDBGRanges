@@ -23,6 +23,7 @@
 \alias{reduce,DuckDBGRanges-method}
 \alias{gaps,DuckDBGRanges-method}
 \alias{disjoin,DuckDBGRanges-method}
+\alias{coverage,DuckDBGRanges-method}
 \alias{union,DuckDBGRanges,DuckDBGRanges-method}
 \alias{union,DuckDBGRanges,GRanges-method}
 \alias{union,GRanges,DuckDBGRanges-method}
@@ -268,6 +269,19 @@ Inter-range methods operate across multiple ranges:
     Creates intervals between consecutive unique start/(end+1) positions.
     Returns a DuckDBGRanges object.
     Note: \code{with.revmap} is not supported.
+  }
+  \item{\code{coverage(x, shift=0L, width=NULL, weight=1L, method=c("auto", "sort", "hash"), ...)}:}{
+    Compute per-base coverage depth per seqname (strand is ignored, as in
+    \code{GenomicRanges::coverage}). Uses the same delta-event and
+    window-function \code{cumsum()} SQL as \code{disjoin()}/\code{gaps()},
+    collecting only the compact per-seqname breakpoint table before
+    building a \code{SimpleRleList}. \code{shift} and \code{width} are
+    recycled per seqlevel; a range shifted so that it falls (partly or
+    entirely) before position 1 is clipped to position 1, matching
+    \code{GenomicRanges::coverage} rather than erroring. \code{method} is
+    accepted for API compatibility and ignored. Note: \code{weight} must be
+    a single number; a per-range vector or an mcols column name is not
+    supported.
   }
 }
 }

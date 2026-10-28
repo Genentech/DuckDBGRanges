@@ -395,7 +395,7 @@ function(conn, seqnames, start = NULL, end = NULL, width = NULL, strand = NULL,
     datacols[["width"]] <- stringAsName(width)
     if (is.null(strand)) {
         datacols[["strand"]] <-
-            call("list_transform", datacols[["seqnames"]], sql("x -> '*'"))
+            call("list_transform", datacols[["seqnames"]], sql("lambda x: '*'"))
     } else {
         datacols[["strand"]] <- stringAsName(strand)
     }
@@ -404,17 +404,17 @@ function(conn, seqnames, start = NULL, end = NULL, width = NULL, strand = NULL,
         datacols[["start"]] <-
             call("list_transform",
                  call("list_zip", datacols[["end"]], datacols[["width"]]),
-                 sql("x -> x[1] - x[2] + 1"))
+                 sql("lambda x: x[1] - x[2] + 1"))
     } else if (is.null(datacols[["end"]])) {
         datacols[["end"]] <-
             call("list_transform",
                  call("list_zip", datacols[["start"]], datacols[["width"]]),
-                 sql("x -> x[1] + x[2] - 1"))
+                 sql("lambda x: x[1] + x[2] - 1"))
     } else if (is.null(datacols[["width"]])) {
         datacols[["width"]] <-
             call("list_transform",
                  call("list_zip", datacols[["end"]], datacols[["start"]]),
-                 sql("x -> x[1] - x[2] + 1"))
+                 sql("lambda x: x[1] - x[2] + 1"))
     }
 
     datacols <- datacols[c("seqnames", "start", "end", "width", "strand")]

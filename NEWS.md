@@ -1,3 +1,20 @@
+# DuckDBGRanges 0.99.9
+
+## Bug fixes
+
+- The `duckdb` R package's 2.0 release disables the deprecated arrow-style
+  SQL lambda syntax (`x -> expr`) by default, ahead of its full removal in
+  2.1. `DuckDBGRangesList`'s `start`/`end`/`width`/`strand` imputation
+  (`DuckDBGRangesList-class.R`) and its `.row_idx`-based `end` column
+  construction (`DuckDBGRangesList-utils.R`) both built `list_transform()`
+  calls with `sql("x -> ...")` lambda bodies, so any lazy
+  `DuckDBGRangesList` operation touching those code paths (including simply
+  extracting a list element, as in the `DuckDBGRanges.Rmd` vignette's
+  `grangeslist` chunk) failed at query materialization with a DuckDB
+  "Binder Error: Deprecated lambda arrow (->) detected". Converted all four
+  call sites to the new `lambda x: expr` syntax; `R CMD build` now completes
+  without re-enabling the deprecated setting.
+
 # DuckDBGRanges 0.99.8
 
 ## Documentation

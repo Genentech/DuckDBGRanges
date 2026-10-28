@@ -191,7 +191,7 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
                                 strand = as.name("strand")))
     datacols[["end"]] <- call("list_transform",
                               call("list_zip", as.name("start"), as.name("width")),
-                              sql("x -> x[1] + x[2] - 1"))
+                              sql("lambda x: x[1] + x[2] - 1"))
 
     # Create new DuckDBDataFrame using .row_idx as keycol
     # The integer indices 1, 2, 3, ... will be naturally sorted

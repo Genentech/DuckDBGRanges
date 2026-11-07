@@ -175,7 +175,8 @@ importFrom(S4Vectors,
   setValidity2,
   split,
   tail,
-  window
+  window,
+  wmsg
 )
 importFrom(Seqinfo,
   "genome<-",

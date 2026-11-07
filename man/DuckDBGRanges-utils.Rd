@@ -186,7 +186,7 @@ or DuckDBGRanges objects, with at least one being a DuckDBGRanges:
     select=c("all", "first", "last", "arbitrary"),
     ignore.strand=FALSE)}:}{
     Find overlapping intervals between query and subject via SQL JOIN.
-    Returns a \linkS4class{Hits} object.
+    Returns a \link[S4Vectors]{Hits-class} object.
   }
   \item{\code{countOverlaps(query, subject, maxgap=-1L, minoverlap=0L,
     type=c("any", "start", "end", "within", "equal"),

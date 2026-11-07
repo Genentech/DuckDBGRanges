@@ -1,11 +1,11 @@
 #' DuckDBGRanges objects
 #'
 #' @description
-#' The DuckDBGRanges class extends the \linkS4class{GenomicRanges} virtual
+#' The DuckDBGRanges class extends the \link[GenomicRanges]{GenomicRanges-class} virtual
 #' class for DuckDB tables.
 #'
 #' @details
-#' DuckDBGRanges adds \linkS4class{GenomicRanges} semantics to a DuckDB table.
+#' DuckDBGRanges adds \link[GenomicRanges]{GenomicRanges-class} semantics to a DuckDB table.
 #' This includes the ability to define the sequence names, start, end, width,
 #' and strand columns, as well as the metadata columns. The \code{seqinfo}
 #' slot is used to define the sequence information for the ranges.
@@ -64,7 +64,7 @@
 #'         metadata columns.
 #'       }
 #'       \item{\code{seqinfo}}{
-#'         Either \code{NULL}, or a \code{\link{Seqinfo}} object, or a character
+#'         Either \code{NULL}, or a \code{\link[Seqinfo]{Seqinfo-class}} object, or a character
 #'         vector of unique sequence names (a.k.a. seqlevels), or a named
 #'         numeric vector of sequence lengths.
 #'       }
@@ -90,19 +90,19 @@
 #'     Get the sequence names.
 #'   }
 #'   \item{\code{ranges(x)}:}{
-#'     Get the ranges as a \linkS4class{DuckDBDataFrame}.
+#'     Get the ranges as a \link[DuckDBDataFrame]{DuckDBDataFrame-class}.
 #'   }
 #'   \item{\code{start(x)}:}{
-#'     Get the start values as a \linkS4class{DuckDBColumn}.
+#'     Get the start values as a \link[DuckDBDataFrame]{DuckDBColumn-class}.
 #'   }
 #'   \item{\code{end(x)}:}{
-#'     Get the end values as a \linkS4class{DuckDBColumn}.
+#'     Get the end values as a \link[DuckDBDataFrame]{DuckDBColumn-class}.
 #'   }
 #'   \item{\code{width(x)}:}{
-#'     Get the width values as a \linkS4class{DuckDBColumn}.
+#'     Get the width values as a \link[DuckDBDataFrame]{DuckDBColumn-class}.
 #'   }
 #'   \item{\code{strand(x)}:}{
-#'     Get the strand values as a \linkS4class{DuckDBColumn}.
+#'     Get the strand values as a \link[DuckDBDataFrame]{DuckDBColumn-class}.
 #'   }
 #'   \item{\code{mcols(x)}, \code{mcols(x) <- value}:}{
 #'     Get or set the metadata columns.
@@ -128,7 +128,7 @@
 #' @section Coercion:
 #' \describe{
 #'   \item{\code{as(from, "DuckDBDataFrame")}:}{
-#'     Creates a \linkS4class{DuckDBDataFrame} object.
+#'     Creates a \link[DuckDBDataFrame]{DuckDBDataFrame-class} object.
 #'   }
 #'   \item{\code{as.data.frame(x)}:}{
 #'     Coerces \code{x} to a data.frame.
@@ -379,6 +379,43 @@ setValidity2("DuckDBGRanges", function(x) {
     msg %||% TRUE
 })
 
+# Vendored from GenomicRanges:::normarg_seqinfo1()/normarg_seqinfo2()
+# (unexported; an R CMD check NOTE otherwise flags the ':::' call), which
+# normalize a constructor's 'seqinfo'/'seqlengths' arguments into a Seqinfo
+# object exactly as GRanges()'s own constructor does. Kept identical to the
+# originals; shared (unqualified) by DuckDBGRangesList-class.R as well.
+#' @importFrom S4Vectors wmsg
+.normarg_seqinfo1 <- function(seqinfo) {
+    if (is.null(seqinfo) || is(seqinfo, "Seqinfo"))
+        return(seqinfo)
+    if (is.character(seqinfo))
+        return(Seqinfo(seqinfo))
+    if (is.numeric(seqinfo)) {
+        seqlevels <- names(seqinfo)
+        if (is.null(seqlevels))
+            stop(wmsg("when a numeric vector, 'seqinfo' must have names"))
+        return(Seqinfo(seqlevels, seqlengths = seqinfo))
+    }
+    stop(wmsg("'seqinfo' must be NULL, or a Seqinfo object, ",
+        "or a character vector of seqlevels, ",
+        "or a named numeric vector of sequence lengths"))
+}
+
+.normarg_seqinfo2 <- function(seqinfo, seqlengths) {
+    seqinfo <- .normarg_seqinfo1(seqinfo)
+    if (is.null(seqlengths))
+        return(seqinfo)
+    if (!is.vector(seqlengths))
+        stop(wmsg("'seqlengths' must be NULL or a vector"))
+    seqlengths_names <- names(seqlengths)
+    if (is.null(seqlengths_names))
+        stop(wmsg("'seqlengths' must have names"))
+    seqinfo2 <- Seqinfo(seqlengths_names, seqlengths)
+    if (is.null(seqinfo))
+        return(seqinfo2)
+    suppressWarnings(merge(seqinfo, seqinfo2))
+}
+
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### Constructor
 ###
@@ -440,12 +477,12 @@ function(conn, seqnames, start = NULL, end = NULL, width = NULL, strand = NULL,
         mcols <- comb[, names(mcols), drop = FALSE]
     }
 
-    seqinfo <- GenomicRanges:::normarg_seqinfo2(seqinfo, seqlengths)
+    seqinfo <- .normarg_seqinfo2(seqinfo, seqlengths)
     if (is.null(seqinfo)) {
         conn <- tblconn(frame, select = FALSE)
         seqinfo <- Seqinfo(sort(pull(distinct(select(conn, !!!as.list(seqnames))))))
     } else {
-        seqinfo <- GenomicRanges:::normarg_seqinfo1(seqinfo)
+        seqinfo <- .normarg_seqinfo1(seqinfo)
     }
 
     new2("DuckDBGRanges", frame = frame, seqinfo = seqinfo, elementMetadata = mcols, check = FALSE)

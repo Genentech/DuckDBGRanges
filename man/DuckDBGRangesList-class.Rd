@@ -48,14 +48,14 @@ return the corresponding in-memory object (for example a
 DuckDBGRangesList.
 }
 \description{
-The DuckDBGRangesList class extends \linkS4class{GRangesList} to represent
-a DuckDB table with LIST[] columns as a \linkS4class{GRangesList} object.
+The DuckDBGRangesList class extends \link[GenomicRanges]{GRangesList-class} to represent
+a DuckDB table with LIST[] columns as a \link[GenomicRanges]{GRangesList-class} object.
 }
 \details{
-The DuckDBGRangesList class extends the \linkS4class{GRangesList} instead of
-\linkS4class{GenomicRangesList} class because the \code{rowRanges} slot
-accepts either a \linkS4class{GenomicRanges} object or a
-\linkS4class{GRangesList} object.
+The DuckDBGRangesList class extends the \link[GenomicRanges]{GRangesList-class} instead of
+\link[GenomicRanges]{GenomicRangesList-class} class because the \code{rowRanges} slot
+accepts either a \link[GenomicRanges]{GenomicRanges-class} object or a
+\link[GenomicRanges]{GRangesList-class} object.
 }
 \section{Constructor}{
 
@@ -104,7 +104,7 @@ accepts either a \linkS4class{GenomicRanges} object or a
         element-level metadata columns.
       }
       \item{\code{seqinfo}}{
-        Either \code{NULL}, or a \code{\link{Seqinfo}} object, or a character
+        Either \code{NULL}, or a \code{\link[Seqinfo]{Seqinfo-class}} object, or a character
         vector of unique sequence names (a.k.a. seqlevels), or a named
         numeric vector of sequence lengths.
       }
@@ -129,19 +129,19 @@ In the code snippets below, \code{x} is a DuckDBGRangesList object:
     Get or set the names of the elements of \code{x}.
   }
   \item{\code{seqnames(x)}:}{
-    Get the sequence names as a \linkS4class{DuckDBAtomicList}.
+    Get the sequence names as a \link[DuckDBDataFrame]{DuckDBAtomicList-class}.
   }
   \item{\code{start(x)}:}{
-    Get the start values as a \linkS4class{DuckDBAtomicList}.
+    Get the start values as a \link[DuckDBDataFrame]{DuckDBAtomicList-class}.
   }
   \item{\code{end(x)}:}{
-    Get the end values as a \linkS4class{DuckDBAtomicList}.
+    Get the end values as a \link[DuckDBDataFrame]{DuckDBAtomicList-class}.
   }
   \item{\code{width(x)}:}{
-    Get the width values as a \linkS4class{DuckDBAtomicList}.
+    Get the width values as a \link[DuckDBDataFrame]{DuckDBAtomicList-class}.
   }
   \item{\code{strand(x)}:}{
-    Get the strand values as a \linkS4class{DuckDBAtomicList}.
+    Get the strand values as a \link[DuckDBDataFrame]{DuckDBAtomicList-class}.
   }
   \item{\code{mcols(x)}, \code{mcols(x) <- value}:}{
      Get or set the element-level metadata columns.
@@ -160,7 +160,7 @@ In the code snippets below, \code{x} is a DuckDBGRangesList object:
 In the code snippets below, \code{x} is a DuckDBGRangesList object:
 \describe{
   \item{\code{as(from, "DuckDBDataFrame")}:}{
-    Creates a \linkS4class{DuckDBDataFrame} object.
+    Creates a \link[DuckDBDataFrame]{DuckDBDataFrame-class} object.
   }
   \item{\code{as(from, "CompressedGRangesList")}:}{
     Converts a DuckDBGRangesList object to a CompressedGRangesList object.

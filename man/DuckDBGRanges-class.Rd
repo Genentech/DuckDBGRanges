@@ -45,11 +45,11 @@ in-memory object (for example a \link[GenomicRanges]{GRanges}), subsetting
 returns a DuckDBGRanges, and the show method returns \code{NULL} invisibly.
 }
 \description{
-The DuckDBGRanges class extends the \linkS4class{GenomicRanges} virtual
+The DuckDBGRanges class extends the \link[GenomicRanges]{GenomicRanges-class} virtual
 class for DuckDB tables.
 }
 \details{
-DuckDBGRanges adds \linkS4class{GenomicRanges} semantics to a DuckDB table.
+DuckDBGRanges adds \link[GenomicRanges]{GenomicRanges-class} semantics to a DuckDB table.
 This includes the ability to define the sequence names, start, end, width,
 and strand columns, as well as the metadata columns. The \code{seqinfo}
 slot is used to define the sequence information for the ranges.
@@ -109,7 +109,7 @@ slot is used to define the sequence information for the ranges.
         metadata columns.
       }
       \item{\code{seqinfo}}{
-        Either \code{NULL}, or a \code{\link{Seqinfo}} object, or a character
+        Either \code{NULL}, or a \code{\link[Seqinfo]{Seqinfo-class}} object, or a character
         vector of unique sequence names (a.k.a. seqlevels), or a named
         numeric vector of sequence lengths.
       }
@@ -137,19 +137,19 @@ In the code snippets below, \code{x} is a DuckDBGRanges object:
     Get the sequence names.
   }
   \item{\code{ranges(x)}:}{
-    Get the ranges as a \linkS4class{DuckDBDataFrame}.
+    Get the ranges as a \link[DuckDBDataFrame]{DuckDBDataFrame-class}.
   }
   \item{\code{start(x)}:}{
-    Get the start values as a \linkS4class{DuckDBColumn}.
+    Get the start values as a \link[DuckDBDataFrame]{DuckDBColumn-class}.
   }
   \item{\code{end(x)}:}{
-    Get the end values as a \linkS4class{DuckDBColumn}.
+    Get the end values as a \link[DuckDBDataFrame]{DuckDBColumn-class}.
   }
   \item{\code{width(x)}:}{
-    Get the width values as a \linkS4class{DuckDBColumn}.
+    Get the width values as a \link[DuckDBDataFrame]{DuckDBColumn-class}.
   }
   \item{\code{strand(x)}:}{
-    Get the strand values as a \linkS4class{DuckDBColumn}.
+    Get the strand values as a \link[DuckDBDataFrame]{DuckDBColumn-class}.
   }
   \item{\code{mcols(x)}, \code{mcols(x) <- value}:}{
     Get or set the metadata columns.
@@ -177,7 +177,7 @@ In the code snippets below, \code{x} is a DuckDBGRanges object:
 
 \describe{
   \item{\code{as(from, "DuckDBDataFrame")}:}{
-    Creates a \linkS4class{DuckDBDataFrame} object.
+    Creates a \link[DuckDBDataFrame]{DuckDBDataFrame-class} object.
   }
   \item{\code{as.data.frame(x)}:}{
     Coerces \code{x} to a data.frame.

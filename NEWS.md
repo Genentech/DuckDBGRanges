@@ -1,3 +1,17 @@
+# DuckDBGRanges 0.99.10
+
+## Bug fixes
+
+- Fixed two Bioconductor `nebbiolo2` build-report `NOTE`s. Vendored local
+  `.normarg_seqinfo1()`/`.normarg_seqinfo2()` helpers (used by the
+  `DuckDBGRanges()` and `DuckDBGRangesList()` constructors to normalize a
+  caller's `seqinfo`/`seqlengths` arguments, exactly as `GRanges()`'s own
+  constructor does) instead of calling unexported
+  `GenomicRanges:::normarg_seqinfo1()`/`normarg_seqinfo2()`. Replaced
+  unanchored `\linkS4class{}`/`\link{}` Rd cross-references to classes
+  defined in `GenomicRanges`, `Seqinfo`, `S4Vectors`, and `DuckDBDataFrame`
+  with explicit `\link[pkg]{Target-class}` package anchors.
+
 # DuckDBGRanges 0.99.9
 
 ## Bug fixes

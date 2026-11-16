@@ -1558,7 +1558,7 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
 ###
 
 #' @importClassesFrom DuckDBDataFrame DuckDBColumn
-#' @importFrom DuckDBDataFrame tblconn
+#' @importFrom DuckDBDataFrame has_row_number tblconn
 #' @importFrom GenomicRanges duplicated
 #' @importFrom dbplyr window_order
 #' @importFrom dplyr row_number mutate select group_by ungroup arrange desc inner_join copy_to
@@ -1588,25 +1588,32 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
     # Use SQL WINDOW function to identify duplicates in-database
     conn <- tblconn(frame)
     keycol_name <- names(frame@keycols)
-    all_keys <- frame@keycols[[1L]]
 
-    # Create position mapping: keycol value -> position in keycols
-    # Position determines row order (position 1 = row 1, etc.)
-    key_positions <- seq_along(all_keys)
-    names(key_positions) <- all_keys
+    if (has_row_number(frame)) {
+        # Row-number keys are already the row positions (the keycols slot
+        # only holds a compact marker, not the key values)
+        conn_with_pos <- mutate(conn, row_pos = !!as.name(keycol_name))
+    } else {
+        all_keys <- frame@keycols[[1L]]
 
-    # Add row position to the connection for proper ordering
-    position_df <- setNames(
-        data.frame(all_keys, key_positions, stringsAsFactors = FALSE),
-        c(keycol_name, "row_pos"))
+        # Create position mapping: keycol value -> position in keycols
+        # Position determines row order (position 1 = row 1, etc.)
+        key_positions <- seq_along(all_keys)
+        names(key_positions) <- all_keys
 
-    # Upload position lookup to DuckDB
-    position_tbl <- copy_to(dbconn(frame), position_df,
-                            name = paste0("pos_lookup_", sample.int(1e6, 1)),
-                            temporary = TRUE, overwrite = TRUE)
+        # Add row position to the connection for proper ordering
+        position_df <- setNames(
+            data.frame(all_keys, key_positions, stringsAsFactors = FALSE),
+            c(keycol_name, "row_pos"))
 
-    # Join to get positions, then compute duplicates
-    conn_with_pos <- inner_join(conn, position_tbl, by = keycol_name)
+        # Upload position lookup to DuckDB
+        position_tbl <- copy_to(dbconn(frame), position_df,
+                                name = paste0("pos_lookup_", sample.int(1e6, 1)),
+                                temporary = TRUE, overwrite = TRUE)
+
+        # Join to get positions, then compute duplicates
+        conn_with_pos <- inner_join(conn, position_tbl, by = keycol_name)
+    }
 
     # Column symbols for group_by
     group_cols <- lapply(c("seqnames", "start", "end", "strand"), as.name)
@@ -1636,6 +1643,11 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
         result_conn <- mutate(result_conn, !!!dup_cond_expr)
         result_conn <- select(result_conn, !!!select_cols)
     }
+
+    # The window function shuffles rows; row-number keyed results are read
+    # back in table order, so put them back in row order
+    if (has_row_number(frame))
+        result_conn <- arrange(result_conn, !!as.name(keycol_name))
 
     # Create DuckDBColumn with compatible keycols
     datacols <- as.expression(setNames(list(as.name("duplicated")), "duplicated"))

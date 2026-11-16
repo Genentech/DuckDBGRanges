@@ -957,6 +957,21 @@ test_that("duplicated works for DuckDBGRanges", {
     unlink(dup_tf)
 })
 
+test_that("duplicated and unique work without a keycol", {
+    gr <- GRanges(c("chr1:100-150:+", "chr1:200-275:-", "chr2:300-360:+",
+                    "chr1:100-150:+"), score = c(10, 20, 15, 5))
+    tf <- tempfile(fileext = ".parquet")
+    on.exit(unlink(tf))
+    arrow::write_parquet(as.data.frame(gr), tf)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", mcols = "score")
+
+    expect_identical(unname(as.vector(duplicated(ddb_gr))), duplicated(gr))
+    expect_identical(unname(as.vector(duplicated(ddb_gr, fromLast = TRUE))),
+                     duplicated(gr, fromLast = TRUE))
+    expect_identical(length(unique(ddb_gr)), length(unique(gr)))
+})
+
 test_that("unique works for DuckDBGRanges", {
     # Create test data with duplicates
     dup_df <- data.frame(

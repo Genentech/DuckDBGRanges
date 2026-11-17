@@ -3789,3 +3789,26 @@ test_that("pgap with mixed types works", {
 
     unlink(c(tf1, tf2))
 })
+
+test_that("overlaps, order and rank follow the element order of keyed ranges", {
+    df <- data.frame(id = c("a", "b", "c"), seqnames = "chr1",
+                     start = c(1L, 100L, 200L), end = c(10L, 110L, 210L),
+                     strand = "+")
+    tf <- tempfile(fileext = ".parquet")
+    on.exit(unlink(tf))
+    arrow::write_parquet(df, tf)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", keycol = "id")
+
+    # the keys are in a different order than the rows in the file
+    x <- ddb_gr[c("c", "a", "b")]
+    gr <- as(x, "GRanges")
+    q <- GRanges(c("chr1:1-5", "chr1:205-300"))
+
+    expect_identical(as.matrix(findOverlaps(q, x)), as.matrix(findOverlaps(q, gr)))
+    expect_identical(as.matrix(findOverlaps(x, q)), as.matrix(findOverlaps(gr, q)))
+    expect_identical(as.matrix(findOverlaps(x, x)), as.matrix(findOverlaps(gr, gr)))
+    expect_identical(countOverlaps(x, q), unname(countOverlaps(gr, q)))
+    expect_identical(order(x), order(gr))
+    expect_identical(rank(x), rank(gr, ties.method = "first"))
+})

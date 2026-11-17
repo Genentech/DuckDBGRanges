@@ -531,15 +531,17 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
     query_select <- setNames(
         lapply(c("query_idx", "seqnames", "start", "end", "strand"), as.name),
         c("query_idx", "seqnames", "query_start", "query_end", "query_strand"))
-    query_conn <- tblconn(query@frame)
-    query_conn <- mutate(query_conn, query_idx = row_number())
+    db_conn <- dbconn(query@frame)
+    # number the rows by each object's own keys, not by DuckDB's scan order
+    query_conn <- .add_keycol_indices(tblconn(query@frame), query@frame,
+                                      db_conn, "query_idx", "ovl_q")
     query_conn <- select(query_conn, !!!query_select)
 
     subject_select <- setNames(
         lapply(c("subject_idx", "seqnames", "start", "end", "strand"), as.name),
         c("subject_idx", "seqnames", "subject_start", "subject_end", "subject_strand"))
-    subject_conn <- tblconn(subject@frame)
-    subject_conn <- mutate(subject_conn, subject_idx = row_number())
+    subject_conn <- .add_keycol_indices(tblconn(subject@frame), subject@frame,
+                                        db_conn, "subject_idx", "ovl_s")
     subject_conn <- select(subject_conn, !!!subject_select)
 
     conditions <- .build_overlap_conditions(
@@ -677,8 +679,9 @@ function(query, subject, maxgap = -1L, minoverlap = 0L,
     subject_select <- setNames(
         lapply(c("subject_idx", "seqnames", "start", "end", "strand"), as.name),
         c("subject_idx", "seqnames", "subject_start", "subject_end", "subject_strand"))
-    subject_conn <- tblconn(subject@frame)
-    subject_conn <- mutate(subject_conn, subject_idx = row_number())
+    # number the rows by the subject's own keys, not by DuckDB's scan order
+    subject_conn <- .add_keycol_indices(tblconn(subject@frame), subject@frame,
+                                        con, "subject_idx", "ovl_s")
     subject_conn <- select(subject_conn, !!!subject_select)
 
     # Build overlap conditions (seqnames handled by inner_join)
@@ -2326,10 +2329,9 @@ function(..., na.last = TRUE, decreasing = FALSE,
 
     frame <- x@frame
 
-    # Get data in natural order and assign row positions
-    conn <- tblconn(frame)
-    pos_mutate <- list(orig_pos = call("row_number"))
-    conn_with_pos <- mutate(conn, !!!pos_mutate)
+    # Assign row positions from the object's own keys, not DuckDB's scan order
+    conn_with_pos <- .add_keycol_indices(tblconn(frame), frame, dbconn(frame),
+                                         "orig_pos", "order")
 
     # Order by seqnames, strand, start, end (natural genomic order)
     # Note: ordering by end is equivalent to ordering by width when start is fixed
@@ -2344,6 +2346,8 @@ function(..., na.last = TRUE, decreasing = FALSE,
             as.name("seqnames"), as.name("strand"),
             as.name("start"), as.name("end"))
     }
+    # ties keep their original order, as order() does for GRanges
+    arrange_cols <- c(arrange_cols, list(as.name("orig_pos")))
     result_conn <- arrange(conn_with_pos, !!!arrange_cols)
 
     select_cols <- list(as.name("orig_pos"))
@@ -2503,19 +2507,19 @@ function(x, na.last = TRUE, ties.method = c("first", "min"), ignore.strand = FAL
 
     frame <- x@frame
 
-    # Get data in natural order and assign row positions
-    conn <- tblconn(frame)
-    pos_mutate <- list(orig_pos = call("row_number"))
-    conn_with_pos <- mutate(conn, !!!pos_mutate)
+    # Assign row positions from the object's own keys, not DuckDB's scan order
+    conn_with_pos <- .add_keycol_indices(tblconn(frame), frame, dbconn(frame),
+                                         "orig_pos", "rank")
 
     # Use SQL window functions for efficient in-database ranking
     # Use window_order() to set ordering for rank window functions
     # Note: use end instead of width (ordering by end is equivalent when start is fixed)
-    if (ignore.strand) {
-        ranked_conn <- window_order(conn_with_pos, seqnames, start, end)
-    } else {
-        ranked_conn <- window_order(conn_with_pos, seqnames, strand, start, end)
-    }
+    order_cols <- if (ignore.strand) c("seqnames", "start", "end")
+                  else c("seqnames", "strand", "start", "end")
+    # with ties.method "first", ties are ranked in their original order
+    if (ties.method == "first")
+        order_cols <- c(order_cols, "orig_pos")
+    ranked_conn <- window_order(conn_with_pos, !!!lapply(order_cols, as.name))
 
     if (ties.method == "first") {
         # Use row_number() for unique ranks

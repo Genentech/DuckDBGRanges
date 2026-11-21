@@ -957,6 +957,21 @@ test_that("duplicated works for DuckDBGRanges", {
     unlink(dup_tf)
 })
 
+test_that("duplicated and unique work without a keycol", {
+    gr <- GRanges(c("chr1:100-150:+", "chr1:200-275:-", "chr2:300-360:+",
+                    "chr1:100-150:+"), score = c(10, 20, 15, 5))
+    tf <- tempfile(fileext = ".parquet")
+    on.exit(unlink(tf))
+    arrow::write_parquet(as.data.frame(gr), tf)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", mcols = "score")
+
+    expect_identical(unname(as.vector(duplicated(ddb_gr))), duplicated(gr))
+    expect_identical(unname(as.vector(duplicated(ddb_gr, fromLast = TRUE))),
+                     duplicated(gr, fromLast = TRUE))
+    expect_identical(length(unique(ddb_gr)), length(unique(gr)))
+})
+
 test_that("unique works for DuckDBGRanges", {
     # Create test data with duplicates
     dup_df <- data.frame(
@@ -3788,4 +3803,78 @@ test_that("pgap with mixed types works", {
     checkDuckDBGRanges(result_mixed2, result_gr)
 
     unlink(c(tf1, tf2))
+})
+
+test_that("overlaps, order and rank follow the element order of keyed ranges", {
+    df <- data.frame(id = c("a", "b", "c"), seqnames = "chr1",
+                     start = c(1L, 100L, 200L), end = c(10L, 110L, 210L),
+                     strand = "+")
+    tf <- tempfile(fileext = ".parquet")
+    on.exit(unlink(tf))
+    arrow::write_parquet(df, tf)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", keycol = "id")
+
+    # the keys are in a different order than the rows in the file
+    x <- ddb_gr[c("c", "a", "b")]
+    gr <- as(x, "GRanges")
+    q <- GRanges(c("chr1:1-5", "chr1:205-300"))
+
+    expect_identical(as.matrix(findOverlaps(q, x)), as.matrix(findOverlaps(q, gr)))
+    expect_identical(as.matrix(findOverlaps(x, q)), as.matrix(findOverlaps(gr, q)))
+    expect_identical(as.matrix(findOverlaps(x, x)), as.matrix(findOverlaps(gr, gr)))
+    expect_identical(countOverlaps(x, q), unname(countOverlaps(gr, q)))
+    expect_identical(order(x), order(gr))
+    expect_identical(rank(x), rank(gr, ties.method = "first"))
+})
+
+test_that("duplicated and unique stay correct on a subset of keyless ranges", {
+    gr <- GRanges(c("chr1:100-150:+", "chr1:200-275:-", "chr2:300-360:+",
+                    "chr1:100-150:+", "chr2:300-360:+", "chr1:5-9:*"),
+                  score = 1:6)
+    tf <- tempfile(fileext = ".parquet")
+    on.exit(unlink(tf))
+    arrow::write_parquet(as.data.frame(gr), tf)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand", mcols = "score")
+
+    # a subset keeps the original row numbers, which must not matter
+    for (i in list(2:6, 4:6, c(1L, 4L), c(3L, 5L), 1:6)) {
+        sub <- ddb_gr[i]
+        ref <- gr[i]
+        label <- paste(i, collapse = ",")
+        expect_identical(unname(as.vector(duplicated(sub))), duplicated(ref),
+                         info = label)
+        expect_identical(unname(as.vector(duplicated(sub, fromLast = TRUE))),
+                         duplicated(ref, fromLast = TRUE), info = label)
+        expect_identical(length(unique(sub)), length(unique(ref)), info = label)
+    }
+})
+
+test_that("positions and ties are right for keyless ranges and after a subset", {
+    # exact duplicates are ties, which order() and rank() break by position
+    gr <- GRanges(c("chr1:100-150:+", "chr1:10-20:+", "chr1:100-150:+",
+                    "chr1:10-20:+", "chr1:50-60:+", "chr1:100-150:+"))
+    tf <- tempfile(fileext = ".parquet")
+    on.exit(unlink(tf))
+    arrow::write_parquet(as.data.frame(gr), tf)
+    ddb_gr <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start",
+                            end = "end", strand = "strand")
+    q <- GRanges(c("chr1:15-30", "chr1:120-125"))
+
+    for (i in list(1:6, 2:6, c(1L, 3L, 4L, 6L))) {
+        x <- ddb_gr[i]
+        ref <- gr[i]
+        label <- paste(i, collapse = ",")
+        expect_identical(order(x), order(ref), info = label)
+        expect_identical(rank(x), rank(ref, ties.method = "first"), info = label)
+        expect_identical(unname(countOverlaps(x, q)), unname(countOverlaps(ref, q)),
+                         info = label)
+        expect_identical(as.matrix(findOverlaps(x, q)),
+                         as.matrix(findOverlaps(ref, q)), info = label)
+        expect_identical(as.matrix(findOverlaps(q, x)),
+                         as.matrix(findOverlaps(q, ref)), info = label)
+    }
+    expect_identical(order(ddb_gr, decreasing = TRUE),
+                     order(gr, decreasing = TRUE))
 })

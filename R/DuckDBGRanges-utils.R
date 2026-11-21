@@ -531,15 +531,17 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
     query_select <- setNames(
         lapply(c("query_idx", "seqnames", "start", "end", "strand"), as.name),
         c("query_idx", "seqnames", "query_start", "query_end", "query_strand"))
-    query_conn <- tblconn(query@frame)
-    query_conn <- mutate(query_conn, query_idx = row_number())
+    db_conn <- dbconn(query@frame)
+    # number the rows by each object's own keys, not by DuckDB's scan order
+    query_conn <- .add_keycol_indices(tblconn(query@frame), query@frame,
+                                      db_conn, "query_idx", "ovl_q")
     query_conn <- select(query_conn, !!!query_select)
 
     subject_select <- setNames(
         lapply(c("subject_idx", "seqnames", "start", "end", "strand"), as.name),
         c("subject_idx", "seqnames", "subject_start", "subject_end", "subject_strand"))
-    subject_conn <- tblconn(subject@frame)
-    subject_conn <- mutate(subject_conn, subject_idx = row_number())
+    subject_conn <- .add_keycol_indices(tblconn(subject@frame), subject@frame,
+                                        db_conn, "subject_idx", "ovl_s")
     subject_conn <- select(subject_conn, !!!subject_select)
 
     conditions <- .build_overlap_conditions(
@@ -677,8 +679,9 @@ function(query, subject, maxgap = -1L, minoverlap = 0L,
     subject_select <- setNames(
         lapply(c("subject_idx", "seqnames", "start", "end", "strand"), as.name),
         c("subject_idx", "seqnames", "subject_start", "subject_end", "subject_strand"))
-    subject_conn <- tblconn(subject@frame)
-    subject_conn <- mutate(subject_conn, subject_idx = row_number())
+    # number the rows by the subject's own keys, not by DuckDB's scan order
+    subject_conn <- .add_keycol_indices(tblconn(subject@frame), subject@frame,
+                                        con, "subject_idx", "ovl_s")
     subject_conn <- select(subject_conn, !!!subject_select)
 
     # Build overlap conditions (seqnames handled by inner_join)
@@ -1558,7 +1561,7 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
 ###
 
 #' @importClassesFrom DuckDBDataFrame DuckDBColumn
-#' @importFrom DuckDBDataFrame tblconn
+#' @importFrom DuckDBDataFrame has_row_number tblconn
 #' @importFrom GenomicRanges duplicated
 #' @importFrom dbplyr window_order
 #' @importFrom dplyr row_number mutate select group_by ungroup arrange desc inner_join copy_to
@@ -1588,25 +1591,32 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
     # Use SQL WINDOW function to identify duplicates in-database
     conn <- tblconn(frame)
     keycol_name <- names(frame@keycols)
-    all_keys <- frame@keycols[[1L]]
 
-    # Create position mapping: keycol value -> position in keycols
-    # Position determines row order (position 1 = row 1, etc.)
-    key_positions <- seq_along(all_keys)
-    names(key_positions) <- all_keys
+    if (has_row_number(frame)) {
+        # Row-number keys are already the row positions (the keycols slot
+        # only holds a compact marker, not the key values)
+        conn_with_pos <- mutate(conn, row_pos = !!as.name(keycol_name))
+    } else {
+        all_keys <- frame@keycols[[1L]]
 
-    # Add row position to the connection for proper ordering
-    position_df <- setNames(
-        data.frame(all_keys, key_positions, stringsAsFactors = FALSE),
-        c(keycol_name, "row_pos"))
+        # Create position mapping: keycol value -> position in keycols
+        # Position determines row order (position 1 = row 1, etc.)
+        key_positions <- seq_along(all_keys)
+        names(key_positions) <- all_keys
 
-    # Upload position lookup to DuckDB
-    position_tbl <- copy_to(dbconn(frame), position_df,
-                            name = paste0("pos_lookup_", sample.int(1e6, 1)),
-                            temporary = TRUE, overwrite = TRUE)
+        # Add row position to the connection for proper ordering
+        position_df <- setNames(
+            data.frame(all_keys, key_positions, stringsAsFactors = FALSE),
+            c(keycol_name, "row_pos"))
 
-    # Join to get positions, then compute duplicates
-    conn_with_pos <- inner_join(conn, position_tbl, by = keycol_name)
+        # Upload position lookup to DuckDB
+        position_tbl <- copy_to(dbconn(frame), position_df,
+                                name = paste0("pos_lookup_", sample.int(1e6, 1)),
+                                temporary = TRUE, overwrite = TRUE)
+
+        # Join to get positions, then compute duplicates
+        conn_with_pos <- inner_join(conn, position_tbl, by = keycol_name)
+    }
 
     # Column symbols for group_by
     group_cols <- lapply(c("seqnames", "start", "end", "strand"), as.name)
@@ -1636,6 +1646,11 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
         result_conn <- mutate(result_conn, !!!dup_cond_expr)
         result_conn <- select(result_conn, !!!select_cols)
     }
+
+    # The window function shuffles rows; row-number keyed results are read
+    # back in table order, so put them back in row order
+    if (has_row_number(frame))
+        result_conn <- arrange(result_conn, !!as.name(keycol_name))
 
     # Create DuckDBColumn with compatible keycols
     datacols <- as.expression(setNames(list(as.name("duplicated")), "duplicated"))
@@ -2326,10 +2341,9 @@ function(..., na.last = TRUE, decreasing = FALSE,
 
     frame <- x@frame
 
-    # Get data in natural order and assign row positions
-    conn <- tblconn(frame)
-    pos_mutate <- list(orig_pos = call("row_number"))
-    conn_with_pos <- mutate(conn, !!!pos_mutate)
+    # Assign row positions from the object's own keys, not DuckDB's scan order
+    conn_with_pos <- .add_keycol_indices(tblconn(frame), frame, dbconn(frame),
+                                         "orig_pos", "order")
 
     # Order by seqnames, strand, start, end (natural genomic order)
     # Note: ordering by end is equivalent to ordering by width when start is fixed
@@ -2344,6 +2358,8 @@ function(..., na.last = TRUE, decreasing = FALSE,
             as.name("seqnames"), as.name("strand"),
             as.name("start"), as.name("end"))
     }
+    # ties keep their original order, as order() does for GRanges
+    arrange_cols <- c(arrange_cols, list(as.name("orig_pos")))
     result_conn <- arrange(conn_with_pos, !!!arrange_cols)
 
     select_cols <- list(as.name("orig_pos"))
@@ -2503,19 +2519,19 @@ function(x, na.last = TRUE, ties.method = c("first", "min"), ignore.strand = FAL
 
     frame <- x@frame
 
-    # Get data in natural order and assign row positions
-    conn <- tblconn(frame)
-    pos_mutate <- list(orig_pos = call("row_number"))
-    conn_with_pos <- mutate(conn, !!!pos_mutate)
+    # Assign row positions from the object's own keys, not DuckDB's scan order
+    conn_with_pos <- .add_keycol_indices(tblconn(frame), frame, dbconn(frame),
+                                         "orig_pos", "rank")
 
     # Use SQL window functions for efficient in-database ranking
     # Use window_order() to set ordering for rank window functions
     # Note: use end instead of width (ordering by end is equivalent when start is fixed)
-    if (ignore.strand) {
-        ranked_conn <- window_order(conn_with_pos, seqnames, start, end)
-    } else {
-        ranked_conn <- window_order(conn_with_pos, seqnames, strand, start, end)
-    }
+    order_cols <- if (ignore.strand) c("seqnames", "start", "end")
+                  else c("seqnames", "strand", "start", "end")
+    # with ties.method "first", ties are ranked in their original order
+    if (ties.method == "first")
+        order_cols <- c(order_cols, "orig_pos")
+    ranked_conn <- window_order(conn_with_pos, !!!lapply(order_cols, as.name))
 
     if (ties.method == "first") {
         # Use row_number() for unique ranks

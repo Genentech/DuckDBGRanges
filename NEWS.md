@@ -1,3 +1,37 @@
+# DuckDBGRanges 0.99.11
+
+## Bug fixes
+
+- `duplicated()` and `unique()` failed with "row names contain missing values"
+  on a `DuckDBGRanges` with no key column (the default when `keycol` is not
+  given). The method built its row-position lookup from the key values in the
+  `keycols` slot, but for a table numbered by row that slot holds only a compact
+  marker, so every object built without a `keycol`, and every result of
+  `sort()`, `reduce()` or `gaps()`, failed. It now uses the row numbers as the
+  positions and returns the result in row order. Objects with a `keycol` were
+  not affected. Reported and fixed by Buyan Khurelbaatar (#1).
+- `findOverlaps()`, `countOverlaps()`, `order()` and `rank()` returned positions
+  that pointed at the wrong ranges when the object had a `keycol` whose order
+  differed from the order in which DuckDB scans the rows. They numbered the rows
+  with a plain `row_number()`, which follows the scan order, but a keyed object
+  follows its key order. The two differ after subsetting by keys, for keys that
+  are not in file order, and, with more than one thread, even for a fresh object.
+  For example, after `x[c("c", "a")]`, `countOverlaps()` gave `1 0` instead of
+  `0 1` and `order()` gave `1 2` instead of `2 1`. The positions now come from
+  the object's own keys, as they already did for `pintersect()`, `psetdiff()`,
+  `distance()` and `nearest()`. Reported and fixed by Buyan Khurelbaatar (#3).
+- `order()` and `rank(ties.method = "first")` now break ties by the original
+  position of the range, as they do for a `GRanges`. Before, ranges that were
+  identical were ordered arbitrarily. Also by Buyan Khurelbaatar (#3).
+
+## Testing
+
+- New tests compare `duplicated()` and `unique()` for keyless ranges, and
+  `findOverlaps()`, `countOverlaps()`, `order()` and `rank()` for keyed ranges
+  whose keys are not in file order, against the same operations on a `GRanges`.
+  Further tests cover subsets of keyless ranges, exact duplicates (ties) and
+  `decreasing = TRUE`.
+
 # DuckDBGRanges 0.99.10
 
 ## Bug fixes

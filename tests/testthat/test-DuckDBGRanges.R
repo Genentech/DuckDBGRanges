@@ -4008,3 +4008,68 @@ test_that("a per-range vector argument is refused up front", {
     expect_s4_class(restrict(x, start = c(chr1 = 110L), end = c(chr1 = 150L)),
                     "DuckDBGRanges")
 })
+
+test_that("findOverlaps with select other than 'all' on an empty side matches GRanges", {
+    si <- Seqinfo(c("chr1", "chr2"), c(100L, 100L))
+    q <- GRanges("chr1", IRanges(c(10, 30, 50), width = 11), "*", seqinfo = si)
+    s <- GRanges("chr1", IRanges(c(20, 41, 70), width = 5), "*", seqinfo = si)
+    for (sel in c("first", "last", "arbitrary")) {
+        expect_identical(findOverlaps(.ddb_from_granges(q), .ddb_from_granges(q)[0], select = sel),
+                         findOverlaps(q, q[0], select = sel))
+        expect_identical(findOverlaps(.ddb_from_granges(q)[0], .ddb_from_granges(s), select = sel),
+                         findOverlaps(q[0], s, select = sel))
+        expect_identical(findOverlaps(q, .ddb_from_granges(q)[0], select = sel),
+                         findOverlaps(q, q[0], select = sel))
+    }
+    expect_identical(length(findOverlaps(.ddb_from_granges(q), .ddb_from_granges(q)[0])), 0L)
+})
+
+test_that("findOverlaps rejects maxgap together with minoverlap, as GRanges does", {
+    si <- Seqinfo("chr1", 100L)
+    q <- GRanges("chr1", IRanges(c(10, 30), width = 11), "*", seqinfo = si)
+    s <- GRanges("chr1", IRanges(c(20, 41), width = 5), "*", seqinfo = si)
+    expect_error(findOverlaps(q, s, maxgap = 0L, minoverlap = 1L), "maxgap")
+    expect_error(findOverlaps(.ddb_from_granges(q), .ddb_from_granges(s),
+                              maxgap = 0L, minoverlap = 1L), "maxgap")
+    expect_identical(as.matrix(findOverlaps(.ddb_from_granges(q), .ddb_from_granges(s), minoverlap = 1L)),
+                     as.matrix(findOverlaps(q, s, minoverlap = 1L)))
+})
+
+test_that("distanceToNearest with select = 'all' matches GRanges", {
+    si <- Seqinfo(c("chr1", "chr2"), c(100L, 100L))
+    q <- GRanges("chr1", IRanges(c(10, 30, 50), width = 11), "*", seqinfo = si)
+    s <- GRanges("chr1", IRanges(c(20, 41, 70), width = 5), "*", seqinfo = si)
+    want <- distanceToNearest(q, s, select = "all")
+    got <- distanceToNearest(.ddb_from_granges(q), .ddb_from_granges(s), select = "all")
+    expect_identical(class(got), class(want))
+    expect_identical(as.matrix(got), as.matrix(want))
+    expect_identical(mcols(got)$distance, mcols(want)$distance)
+    for (sel in c("arbitrary", "all")) {
+        expect_identical(class(distanceToNearest(.ddb_from_granges(q), .ddb_from_granges(s), select = sel)),
+                         class(distanceToNearest(q, s, select = sel)))
+    }
+})
+
+test_that("gaps keeps the gaps before and between ranges when a seqlength is NA", {
+    canon <- function(g) {
+        d <- as.data.frame(g)[, c("seqnames", "start", "end", "strand")]
+        d$seqnames <- as.character(d$seqnames)
+        d$strand <- as.character(d$strand)
+        d <- d[order(d$seqnames, d$strand, d$start, d$end), ]
+        rownames(d) <- NULL
+        d
+    }
+    set.seed(7)
+    for (rep in 1:25) {
+        lens <- c(chr1 = sample(c(NA, 150L), 1L), chr2 = 200L, chr3 = sample(c(NA, 150L), 1L))
+        k <- sample(0:8, 1L)
+        gr <- GRanges(sample(names(lens), k, TRUE),
+                      IRanges(sample(80L, k, TRUE), width = sample(25L, k, TRUE)),
+                      sample(c("+", "-", "*"), k, TRUE),
+                      seqinfo = Seqinfo(names(lens), lens))
+        for (ig in c(FALSE, TRUE)) {
+            expect_equal(canon(gaps(.ddb_from_granges(gr), ignore.strand = ig)),
+                         canon(suppressWarnings(gaps(gr, ignore.strand = ig))))
+        }
+    }
+})

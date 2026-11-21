@@ -19,6 +19,21 @@
   one, is rejected with a clear message at the call. Before, it failed late,
   inside the generated SQL, with an unrelated database error.
 - Removed "no visible binding" NOTEs from `R CMD check` in the ordering code.
+- `distanceToNearest(x, subject, select = "all")` failed with a database parser
+  error, because a column name reached the generated SQL as the text
+  `as.name('dist')`. It now returns the hits. `distanceToNearest()` also returns
+  a `SortedByQueryHits`, as it does for a `GRanges`, where it used to return a
+  plain `Hits`.
+- `gaps()` returned no ranges for a seqlevel whose length is `NA`. It now keeps
+  the gaps before and between the ranges and, as for a `GRanges`, has no gap
+  after the last range, because the end of the sequence is unknown.
+- `findOverlaps()` with `select` set to `"first"`, `"last"` or `"arbitrary"`
+  returned an empty `Hits` when the query or the subject was empty. It now
+  returns an integer vector, with an `NA` for each query when the subject is
+  empty and `integer(0)` when the query is empty, as it does for a `GRanges`.
+- `findOverlaps()` and the functions built on it now give the error that
+  `GRanges` gives when `maxgap` and `minoverlap` are both set away from their
+  defaults with `type = "any"`. Before, the pair was accepted.
 
 ## Testing
 
@@ -26,6 +41,10 @@
   with a `GRanges` over fixtures whose seqlevels, strands and ties are chosen to
   expose string-order and arbitrary-tie behaviour, and cover the new argument
   checks.
+- New tests compare `findOverlaps()` with an empty side, `distanceToNearest()`
+  with `select = "all"` and `gaps()` with unknown seqlengths against a
+  `GRanges`, and check the `maxgap` and `minoverlap` error. They fail on the
+  previous code.
 
 # DuckDBGRanges 0.99.11
 

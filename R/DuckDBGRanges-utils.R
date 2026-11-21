@@ -474,6 +474,11 @@ function(q_start, s_start, q_end, s_end, q_strand, s_strand, maxgap = -1L,
 {
     conditions <- list()
 
+    # as IRanges::findOverlaps() does for type "any"
+    if (maxgap != -1L && minoverlap != 0L)
+        stop("when 'type' is \"any\", at least one of 'maxgap' and ",
+             "'minoverlap' must be set to its default value")
+
     # Overlap condition with maxgap adjustment
     # For maxgap = -1L (default), requires actual overlap
     # For maxgap >= 0, allows gaps up to maxgap bases
@@ -700,7 +705,7 @@ function(query, subject, maxgap = -1L, minoverlap = 0L,
     ns <- length(subject)
 
     if (nq == 0L || ns == 0L) {
-        return(Hits(nLnode = nq, nRnode = ns))
+        return(selectHits(Hits(nLnode = nq, nRnode = ns), select = select))
     }
 
     # Create temp table for query
@@ -771,7 +776,7 @@ function(query, subject, maxgap = -1L, minoverlap = 0L,
     ns <- length(subject)
 
     if (nq == 0L || ns == 0L) {
-        return(Hits(nLnode = nq, nRnode = ns))
+        return(selectHits(Hits(nLnode = nq, nRnode = ns), select = select))
     }
 
     # Build the overlap-hit range-join (seqnames equi-key + interval inequalities)
@@ -2966,7 +2971,11 @@ function(x, start = 1L, end = seqlengths(x), ignore.strand = FALSE)
         })
         bounds_df <- do.call(rbind, bounds_list)
     }
-    bounds_df <- bounds_df[!is.na(bounds_df$bound_start) & !is.na(bounds_df$bound_end) &
+    # A seqlevel with no known length has an open end
+    open_end <- is.na(bounds_df$bound_end)
+    bounds_df$bound_end[open_end] <- .Machine$integer.max - 1L
+    bounds_df$open_end <- open_end
+    bounds_df <- bounds_df[!is.na(bounds_df$bound_start) &
                            bounds_df$bound_end >= bounds_df$bound_start, ]
 
     if (nrow(bounds_df) == 0L) {
@@ -2977,7 +2986,10 @@ function(x, start = 1L, end = seqlengths(x), ignore.strand = FALSE)
     # Handle empty input case
     if (length(x) == 0L) {
         # No ranges - gaps are the full bounds for each seqname/strand
-        gap_data <- bounds_df
+        gap_data <- bounds_df[!bounds_df$open_end, ]
+        if (nrow(gap_data) == 0L) {
+            return(x[integer(0)])
+        }
         gap_data$start <- gap_data$bound_start
         gap_data$end <- gap_data$bound_end
         gap_data$width <- gap_data$end - gap_data$start + 1L
@@ -3091,7 +3103,9 @@ function(x, start = 1L, end = seqlengths(x), ignore.strand = FALSE)
     result <- filter(result, !!!list(
         call("<=", as.name("start"), as.name("end")),
         call(">=", as.name("start"), as.name("bound_start")),
-        call("<=", as.name("end"), as.name("bound_end"))
+        call("<=", as.name("end"), as.name("bound_end")),
+        call("|", call("!", as.name("open_end")),
+             call("<", as.name("end"), as.name("bound_end")))
     ))
 
     # Select final columns
@@ -3985,7 +3999,7 @@ function(x, y, ignore.strand = FALSE)
     n_x <- length(x)
     n_subj <- length(subject)
     if (n_x == 0L || n_subj == 0L) {
-        hits <- Hits(nLnode = n_x, nRnode = n_subj)
+        hits <- Hits(nLnode = n_x, nRnode = n_subj, sort.by.query = TRUE)
         mcols(hits) <- DataFrame(distance = integer(0))
         return(hits)
     }
@@ -4030,7 +4044,7 @@ function(x, y, ignore.strand = FALSE)
     } else {
         result <- select(joined,
                          !!!lapply(c("x_idx", "subj_idx", "dist"), as.name))
-        result <- mutate(result, distance = as.name("dist"))
+        result <- mutate(result, !!!list(distance = as.name("dist")))
         result <- select(result,
                          !!!lapply(c("x_idx", "subj_idx", "distance"), as.name))
         result <- distinct(result)
@@ -4040,7 +4054,7 @@ function(x, y, ignore.strand = FALSE)
     result_df <- collect(result)
 
     if (nrow(result_df) == 0) {
-        hits <- Hits(nLnode = n_x, nRnode = n_subj)
+        hits <- Hits(nLnode = n_x, nRnode = n_subj, sort.by.query = TRUE)
         mcols(hits) <- DataFrame(distance = integer(0))
         return(hits)
     }
@@ -4048,7 +4062,8 @@ function(x, y, ignore.strand = FALSE)
     hits <- Hits(from = as.integer(result_df$x_idx),
                  to = as.integer(result_df$subj_idx),
                  nLnode = n_x,
-                 nRnode = n_subj)
+                 nRnode = n_subj,
+                 sort.by.query = TRUE)
     mcols(hits) <- DataFrame(distance = as.integer(result_df$distance))
     hits
 }

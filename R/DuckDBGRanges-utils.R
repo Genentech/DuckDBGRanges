@@ -576,6 +576,36 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
     paste(unlist(plan, use.names = FALSE), collapse = "\n")
 }
 
+# Integer ranks for ordering. A GRanges is ordered by the rank of the seqname in
+# the seqlevels (not by the seqname as text) and by strand in the order +, -, *
+# (not by the strand as text, where * comes first). The seqlevel ranks come from
+# a small table joined on seqname, which costs the same however many seqlevels
+# there are; a seqname that is not a seqlevel has no rank and sorts last.
+#' @importFrom dbplyr remote_con
+#' @importFrom dplyr copy_to left_join mutate sql
+#' @importFrom Seqinfo seqlevels
+.add_order_ranks <- function(conn, seqinfo) {
+    lv <- seqlevels(seqinfo)
+    ranks <- data.frame(seqnames = lv, .seq_rank = seq_along(lv),
+                        stringsAsFactors = FALSE)
+    ranks <- copy_to(remote_con(conn), ranks, name = basename(tempfile("seqrank_")),
+                     temporary = TRUE, overwrite = FALSE)
+    conn <- left_join(conn, ranks, by = "seqnames")
+    mutate(conn, .strand_rank = sql(
+        "CASE strand WHEN '+' THEN 1 WHEN '-' THEN 2 WHEN '*' THEN 3 ELSE 4 END"))
+}
+
+# The sort keys of order(): seqlevel, strand, start, end, and last the original
+# position, so that ranges that tie keep their order, as they do for a GRanges
+# (also for decreasing = TRUE, where only the first four keys are reversed).
+.order_keys <- function(decreasing, ignore.strand, pos) {
+    keys <- lapply(c(".seq_rank", if (!ignore.strand) ".strand_rank", "start", "end"),
+                   as.name)
+    if (decreasing)
+        keys <- lapply(keys, function(k) call("desc", k))
+    c(keys, list(as.name(pos)))
+}
+
 # Build a DuckDBGRanges from a dplyr connection with standard GRanges columns
 # 
 # This helper consolidates the common pattern of creating a new DuckDBGRanges
@@ -596,7 +626,9 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
 .build_DuckDBGRanges <- function(conn, seqinfo, order_by = NULL) {
     # Set default ordering if not specified
     if (is.null(order_by)) {
-        conn <- window_order(conn, seqnames, strand, start)
+        conn <- .add_order_ranks(conn, seqinfo)
+        conn <- window_order(conn, !!!lapply(
+            c(".seq_rank", ".strand_rank", "start", "end"), as.name))
     } else if (length(order_by) > 0) {
         conn <- window_order(conn, !!!order_by)
     }
@@ -1099,11 +1131,46 @@ function(x, ranges, maxgap = -1L, minoverlap = 0L,
     replaceSlots(x, frame = new_frame, elementMetadata = mcols, check = FALSE)
 }
 
+# The intra-range methods take one value per call. A GRanges also accepts one
+# value per range, but a vector cannot be written into the SQL of a lazy object,
+# so it is refused up front, where the mistake is. (Taking it silently is worse:
+# shift(x, 1:4) used to apply only the first value, and the other methods
+# failed later, when the result was first used.)
+.scalar_arg <- function(value, name, type = c("number", "flag", "string"),
+                        na.ok = FALSE, min = NULL, choices = NULL) {
+    type <- match.arg(type)
+    if (length(value) != 1L || !is.atomic(value)) {
+        stop("'", name, "' must be a single value: a DuckDBGRanges does not ",
+             "take one value per range. Use a single value, or work in memory ",
+             "with as(x, \"GRanges\")", call. = FALSE)
+    }
+    if (is.na(value)) {
+        if (!na.ok)
+            stop("'", name, "' must not be NA", call. = FALSE)
+        return(value)
+    }
+    ok <- switch(type, number = is.numeric(value), flag = is.logical(value),
+                 string = is.character(value))
+    if (!ok) {
+        stop("'", name, "' must be a single ",
+             switch(type, number = "number", flag = "TRUE or FALSE", string = "string"),
+             call. = FALSE)
+    }
+    if (!is.null(min) && value < min)
+        stop("'", name, "' must be >= ", min, call. = FALSE)
+    if (!is.null(choices) && !(value %in% choices)) {
+        stop("'", name, "' must be one of ",
+             paste0("\"", choices, "\"", collapse = ", "), call. = FALSE)
+    }
+    value
+}
+
 #' @export
 #' @importFrom IRanges shift
 setMethod("shift", "DuckDBGRanges",
 function(x, shift = 0L, use.names = TRUE)
 {
+    shift <- .scalar_arg(shift, "shift", "number")
     if (length(x) == 0L)
         return(x)
 
@@ -1156,6 +1223,9 @@ function(x, shift = 0L, use.names = TRUE)
 setMethod("narrow", "DuckDBGRanges",
 function(x, start = NA, end = NA, width = NA, use.names = TRUE)
 {
+    start <- .scalar_arg(start, "start", "number", na.ok = TRUE)
+    end <- .scalar_arg(end, "end", "number", na.ok = TRUE)
+    width <- .scalar_arg(width, "width", "number", na.ok = TRUE)
     if (length(x) == 0L)
         return(x)
 
@@ -1245,6 +1315,9 @@ function(x, start = NA, end = NA, width = NA, use.names = TRUE)
 setMethod("resize", "DuckDBGRanges",
 function(x, width, fix = "start", use.names = TRUE, ignore.strand = FALSE)
 {
+    width <- .scalar_arg(width, "width", "number", min = 0)
+    fix <- .scalar_arg(fix, "fix", "string", choices = c("start", "end", "center"))
+    ignore.strand <- .scalar_arg(ignore.strand, "ignore.strand", "flag")
     if (length(x) == 0L)
         return(x)
 
@@ -1312,6 +1385,10 @@ setMethod("flank", "DuckDBGRanges",
 function(x, width, start = TRUE, both = FALSE, use.names = TRUE,
          ignore.strand = FALSE)
 {
+    width <- .scalar_arg(width, "width", "number")
+    start <- .scalar_arg(start, "start", "flag")
+    both <- .scalar_arg(both, "both", "flag")
+    ignore.strand <- .scalar_arg(ignore.strand, "ignore.strand", "flag")
     if (length(x) == 0L)
         return(x)
 
@@ -1405,6 +1482,8 @@ function(x, width, start = TRUE, both = FALSE, use.names = TRUE,
 setMethod("promoters", "DuckDBGRanges",
 function(x, upstream = 2000, downstream = 200, use.names = TRUE)
 {
+    upstream <- .scalar_arg(upstream, "upstream", "number", min = 0)
+    downstream <- .scalar_arg(downstream, "downstream", "number", min = 0)
     if (length(x) == 0L)
         return(x)
 
@@ -1439,6 +1518,8 @@ function(x, upstream = 2000, downstream = 200, use.names = TRUE)
 setMethod("terminators", "DuckDBGRanges",
 function(x, upstream = 2000, downstream = 200, use.names = TRUE)
 {
+    upstream <- .scalar_arg(upstream, "upstream", "number", min = 0)
+    downstream <- .scalar_arg(downstream, "downstream", "number", min = 0)
     if (length(x) == 0L)
         return(x)
 
@@ -1525,35 +1606,8 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
             mutate(width = !!call("+", call("-", as.name("end"), as.name("start")), 1L))
     }
 
-    # Add row_number as keycol
-    new_conn <- mutate(new_conn, row_number = row_number())
-
-    # Create new datacols expression
-    datacols <- expression(
-        seqnames = seqnames,
-        start = start,
-        end = end,
-        width = width,
-        strand = strand
-    )
-
-    # Create keycols
-    keycols <- list(row_number = set_row_number(new_conn))
-
-    # Create new DuckDBDataFrame
-    new_frame <- new2("DuckDBDataFrame",
-                      conn = new_conn,
-                      datacols = datacols,
-                      keycols = keycols,
-                      dimtbls = new.env(parent = emptyenv()),
-                      check = FALSE)
-
-    # Create new DuckDBGRanges with proper empty DataFrame for elementMetadata
-    new2("DuckDBGRanges",
-         frame = new_frame,
-         seqinfo = seqinfo(x),
-         elementMetadata = new("DFrame", nrows = nrow(new_frame)),
-         check = FALSE)
+    # Number the rows in seqlevel and strand order
+    .build_DuckDBGRanges(new_conn, seqinfo(x))
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2321,6 +2375,7 @@ function(x, y, ignore.strand = FALSE, ...)
 
 #' @export
 #' @importFrom DuckDBDataFrame tblconn
+#' @importFrom dbplyr window_order
 #' @importFrom dplyr arrange collect mutate row_number select
 #' @importFrom S4Vectors new2
 setMethod("order", "DuckDBGRanges",
@@ -2345,28 +2400,18 @@ function(..., na.last = TRUE, decreasing = FALSE,
     conn_with_pos <- .add_keycol_indices(tblconn(frame), frame, dbconn(frame),
                                          "orig_pos", "order")
 
-    # Order by seqnames, strand, start, end (natural genomic order)
-    # Note: ordering by end is equivalent to ordering by width when start is fixed
-    if (decreasing) {
-        arrange_cols <- list(
-            call("desc", as.name("seqnames")),
-            call("desc", as.name("strand")),
-            call("desc", as.name("start")),
-            call("desc", as.name("end")))
-    } else {
-        arrange_cols <- list(
-            as.name("seqnames"), as.name("strand"),
-            as.name("start"), as.name("end"))
-    }
-    # ties keep their original order, as order() does for GRanges
-    arrange_cols <- c(arrange_cols, list(as.name("orig_pos")))
-    result_conn <- arrange(conn_with_pos, !!!arrange_cols)
+    # Order by seqlevel rank, strand rank, start, end, then original position
+    conn_with_pos <- .add_order_ranks(conn_with_pos, seqinfo(x))
+    arrange_cols <- .order_keys(decreasing, FALSE, "orig_pos")
+    # Rank with a window function and sort by that rank here: an arrange() that
+    # is followed by a select() ends up as an ORDER BY inside a subquery, which
+    # DuckDB is free to ignore
+    ranked_conn <- window_order(conn_with_pos, !!!arrange_cols)
+    ranked_conn <- mutate(ranked_conn, order_rank = row_number())
+    result <- collect(select(ranked_conn,
+                             !!!lapply(c("orig_pos", "order_rank"), as.name)))
 
-    select_cols <- list(as.name("orig_pos"))
-    result_conn <- select(result_conn, !!!select_cols)
-    result <- collect(result_conn)
-
-    as.integer(result$orig_pos)
+    as.integer(result$orig_pos[order(result$order_rank)])
 })
 
 #' @importFrom DuckDBDataFrame tblconn
@@ -2388,24 +2433,14 @@ function(..., na.last = TRUE, decreasing = FALSE,
         return(x)
 
     frame <- x@frame
-    conn <- tblconn(frame)
+    conn <- .add_keycol_indices(tblconn(frame), frame, dbconn(frame),
+                                "orig_pos", "sort")
+    conn <- .add_order_ranks(conn, seqinfo(x))
 
     # Use window_order() to set ordering for row_number() window function
     # This avoids "ORDER BY ignored in subqueries" warnings
-    # Note: ordering by end is equivalent to ordering by width when start is fixed
-    if (ignore.strand) {
-        if (decreasing) {
-            sorted_conn <- window_order(conn, desc(seqnames), desc(start), desc(end))
-        } else {
-            sorted_conn <- window_order(conn, seqnames, start, end)
-        }
-    } else {
-        if (decreasing) {
-            sorted_conn <- window_order(conn, desc(seqnames), desc(strand), desc(start), desc(end))
-        } else {
-            sorted_conn <- window_order(conn, seqnames, strand, start, end)
-        }
-    }
+    sorted_conn <- window_order(conn,
+                                !!!.order_keys(decreasing, ignore.strand, "orig_pos"))
 
     # Window ordering already set above, use empty list to skip helper's default
     .build_DuckDBGRanges(sorted_conn, seqinfo(x), order_by = list())
@@ -2416,6 +2451,7 @@ setMethod("sort", "DuckDBGRanges", .sort.DuckDBGRanges)
 
 #' @export
 #' @importFrom DuckDBDataFrame tblconn
+#' @importFrom dbplyr window_order
 #' @importFrom dplyr collect filter mutate lag summarize
 setMethod("is.unsorted", "DuckDBGRanges",
 function(x, na.rm = FALSE, strictly = FALSE, ignore.strand = FALSE, ...)
@@ -2431,28 +2467,33 @@ function(x, na.rm = FALSE, strictly = FALSE, ignore.strand = FALSE, ...)
 
     frame <- x@frame
 
-    # Get data in its natural order and compare with LAG window function
-    conn <- tblconn(frame)
+    # Compare each range with the one before it in the object's own row order,
+    # by seqlevel rank and strand rank (+, -, *), as GRanges does
+    conn <- .add_keycol_indices(tblconn(frame), frame, dbconn(frame),
+                                "orig_pos", "unsorted")
+    conn <- .add_order_ranks(conn, seqinfo(x))
+    conn <- window_order(conn, !!as.name("orig_pos"))
 
     # Add LAG values for comparison
     lag_mutate <- list(
-        prev_seqnames = call("lag", as.name("seqnames")),
-        prev_strand = call("lag", as.name("strand")),
+        prev_pos = call("lag", as.name("orig_pos")),
+        prev_seqnames = call("lag", as.name(".seq_rank")),
+        prev_strand = call("lag", as.name(".strand_rank")),
         prev_start = call("lag", as.name("start")),
         prev_end = call("lag", as.name("end")))
     conn_with_lag <- mutate(conn, !!!lag_mutate)
 
     # Filter out first row (no previous value)
-    filter_expr <- list(call("!", call("is.na", as.name("prev_seqnames"))))
+    filter_expr <- list(call("!", call("is.na", as.name("prev_pos"))))
     conn_filtered <- filter(conn_with_lag, !!!filter_expr)
 
     # Build the "is_unsorted" condition in SQL
-    # Unsorted if current < prev (seqnames < prev_seqnames, or equal and start < prev_start, etc.)
-    # String comparison in SQL: seqnames < prev_seqnames
-    seq_lt <- call("<", as.name("seqnames"), as.name("prev_seqnames"))
-    seq_eq <- call("==", as.name("seqnames"), as.name("prev_seqnames"))
-    strand_lt <- call("<", as.name("strand"), as.name("prev_strand"))
-    strand_eq <- call("==", as.name("strand"), as.name("prev_strand"))
+    # Unsorted if current < prev (seqlevel rank < prev rank, or equal and
+    # start < prev_start, etc.)
+    seq_lt <- call("<", as.name(".seq_rank"), as.name("prev_seqnames"))
+    seq_eq <- call("==", as.name(".seq_rank"), as.name("prev_seqnames"))
+    strand_lt <- call("<", as.name(".strand_rank"), as.name("prev_strand"))
+    strand_eq <- call("==", as.name(".strand_rank"), as.name("prev_strand"))
     start_lt <- call("<", as.name("start"), as.name("prev_start"))
     start_eq <- call("==", as.name("start"), as.name("prev_start"))
     end_lt <- call("<", as.name("end"), as.name("prev_end"))
@@ -2523,24 +2564,23 @@ function(x, na.last = TRUE, ties.method = c("first", "min"), ignore.strand = FAL
     conn_with_pos <- .add_keycol_indices(tblconn(frame), frame, dbconn(frame),
                                          "orig_pos", "rank")
 
-    # Use SQL window functions for efficient in-database ranking
-    # Use window_order() to set ordering for rank window functions
-    # Note: use end instead of width (ordering by end is equivalent when start is fixed)
-    order_cols <- if (ignore.strand) c("seqnames", "start", "end")
-                  else c("seqnames", "strand", "start", "end")
-    # with ties.method "first", ties are ranked in their original order
-    if (ties.method == "first")
-        order_cols <- c(order_cols, "orig_pos")
-    ranked_conn <- window_order(conn_with_pos, !!!lapply(order_cols, as.name))
+    # Use SQL window functions for efficient in-database ranking, ordered by
+    # seqlevel rank, strand rank, start and end
+    conn_with_pos <- .add_order_ranks(conn_with_pos, seqinfo(x))
+    tie_cols <- lapply(c(".seq_rank", if (!ignore.strand) ".strand_rank",
+                         "start", "end"), as.name)
+    ranked_conn <- window_order(conn_with_pos,
+                                !!!c(tie_cols, list(as.name("orig_pos"))))
 
-    if (ties.method == "first") {
-        # Use row_number() for unique ranks
-        rank_mutate <- list(rnk = call("row_number"))
-    } else {
-        # ties.method == "min": use dense_rank() for tied ranks
-        rank_mutate <- list(rnk = call("dense_rank"))
+    # Rank with unique values (ties in their original order), then give every
+    # range in a tie the smallest rank of the tie, as ties.method = "min" does
+    ranked_conn <- mutate(ranked_conn, rnk = row_number())
+    if (ties.method == "min") {
+        ranked_conn <- group_by(ranked_conn, !!!tie_cols)
+        ranked_conn <- mutate(ranked_conn, !!!list(
+            rnk = call("min", as.name("rnk"), na.rm = TRUE)))
+        ranked_conn <- ungroup(ranked_conn)
     }
-    ranked_conn <- mutate(ranked_conn, !!!rank_mutate)
 
     # Reorder by original position and extract ranks
     reorder_cols <- list(as.name("orig_pos"))
@@ -2638,6 +2678,12 @@ function(x, use.names = TRUE, ...)
 setMethod("restrict", "DuckDBGRanges",
 function(x, start = NA, end = NA, keep.all.ranges = FALSE, use.names = TRUE)
 {
+    if (is.null(names(start)) && length(start) > 1L ||
+        is.null(names(end)) && length(end) > 1L) {
+        stop("'start' and 'end' must be single values, or named by seqname: a ",
+             "DuckDBGRanges does not take one value per range. Use as(x, ",
+             "\"GRanges\") to work in memory", call. = FALSE)
+    }
     n <- length(x)
     if (n == 0L)
         return(x)

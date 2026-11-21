@@ -1,3 +1,32 @@
+# DuckDBGRanges 0.99.12
+
+## Significant changes
+
+- `sort()`, `order()`, `rank()`, `range()` and `is.unsorted()` now order ranges
+  as a `GRanges` does: by seqlevel rank rather than by the seqname string, then
+  by strand (`+`, `-`, `*`), then by start and end. Ties keep the original
+  position of the range, also when `decreasing = TRUE`. Before, a seqlevel
+  order such as `chr2, chr10` was replaced by the alphabetical order of the
+  names, so results disagreed with the same data held as a `GRanges`.
+
+## Bug fixes
+
+- `rank(ties.method = "min")` now gives tied ranges the lowest rank of the tie
+  group, as `GRanges` does.
+- `shift()`, `narrow()`, `resize()`, `flank()`, `promoters()`, `terminators()`
+  and `restrict()` now check their arguments up front. A vector-valued argument
+  of the wrong length, or one that is not a single value where the method needs
+  one, is rejected with a clear message at the call. Before, it failed late,
+  inside the generated SQL, with an unrelated database error.
+- Removed "no visible binding" NOTEs from `R CMD check` in the ordering code.
+
+## Testing
+
+- New tests compare `sort()`, `order()`, `rank()`, `range()` and `is.unsorted()`
+  with a `GRanges` over fixtures whose seqlevels, strands and ties are chosen to
+  expose string-order and arbitrary-tie behaviour, and cover the new argument
+  checks.
+
 # DuckDBGRanges 0.99.11
 
 ## Bug fixes

@@ -3878,3 +3878,133 @@ test_that("positions and ties are right for keyless ranges and after a subset", 
     expect_identical(order(ddb_gr, decreasing = TRUE),
                      order(gr, decreasing = TRUE))
 })
+
+## Order is by the rank of the seqname in the seqlevels, and by strand in the
+## order +, -, *, not by those values as text. The fixtures above have
+## alphabetical seqlevels and one strand, which is why this went unnoticed.
+.ranges_label <- function(x) {
+    paste(as.character(seqnames(x)), start(x), end(x), as.character(strand(x)))
+}
+
+.ordering_fixture <- function() {
+    levs <- c("chr2", "chr10", "chr1", "chrX", "chrUnused")
+    si <- Seqinfo(levs, seqlengths = c(5000L, 4000L, 6000L, 3000L, 1000L))
+    set.seed(3)
+    n <- 120L
+    gr <- GRanges(sample(c("chr2", "chr10", "chr1", "chrX"), n, TRUE),
+                  IRanges(sample(300L, n, TRUE), width = sample(40L, n, TRUE)),
+                  strand = sample(c("+", "-", "*"), n, TRUE), seqinfo = si)
+    c(gr, gr[c(5L, 9L, 5L, 40L)])           # exact duplicates are ties
+}
+
+.ddb_from_granges <- function(gr, keyed = FALSE) {
+    df <- data.frame(seqnames = as.character(seqnames(gr)), start = start(gr),
+                     end = end(gr), strand = as.character(strand(gr)),
+                     stringsAsFactors = FALSE)
+    if (keyed) df$id <- sprintf("k%04d", seq_len(nrow(df)))
+    tf <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(df, tf)
+    DuckDBGRanges(tf, seqnames = "seqnames", start = "start", end = "end",
+                  strand = "strand", keycol = if (keyed) "id",
+                  seqinfo = seqinfo(gr))
+}
+
+test_that("order, rank, sort and is.unsorted follow the seqlevels and the strand order", {
+    gr <- .ordering_fixture()
+    for (keyed in c(FALSE, TRUE)) {
+        x <- .ddb_from_granges(gr, keyed)
+        ref <- as(x, "GRanges")                  # the object's own row order
+        lab <- if (keyed) "keyed" else "keyless"
+
+        expect_identical(as.integer(order(x)), order(ref), info = lab)
+        expect_identical(as.integer(order(x, decreasing = TRUE)),
+                         order(ref, decreasing = TRUE), info = lab)
+        expect_identical(as.integer(rank(x)),
+                         as.integer(rank(ref, ties.method = "first")), info = lab)
+        expect_identical(as.integer(rank(x, ties.method = "min")),
+                         as.integer(rank(ref, ties.method = "min")), info = lab)
+        expect_identical(as.integer(rank(x, ignore.strand = TRUE)),
+                         as.integer(rank(ref, ties.method = "first",
+                                         ignore.strand = TRUE)), info = lab)
+        expect_identical(.ranges_label(as(sort(x), "GRanges")),
+                         .ranges_label(sort(ref)), info = lab)
+        expect_identical(.ranges_label(as(sort(x, decreasing = TRUE), "GRanges")),
+                         .ranges_label(sort(ref, decreasing = TRUE)), info = lab)
+        expect_identical(is.unsorted(x), is.unsorted(ref), info = lab)
+        expect_identical(is.unsorted(x, strictly = TRUE),
+                         is.unsorted(ref, strictly = TRUE), info = lab)
+    }
+
+    # ranges that are already sorted by the seqlevels are not unsorted
+    sorted <- .ddb_from_granges(sort(gr))
+    expect_false(is.unsorted(sorted))
+    expect_identical(is.unsorted(sorted), is.unsorted(sort(gr)))
+})
+
+test_that("reduce, disjoin, range, gaps, intersect and setdiff come out in seqlevel order", {
+    gr <- .ordering_fixture()
+    x <- .ddb_from_granges(gr)
+    other <- gr[1:40]
+    y <- .ddb_from_granges(other)
+    lab <- function(d) .ranges_label(as(d, "GRanges"))
+
+    expect_identical(lab(reduce(x)), .ranges_label(reduce(gr)))
+    expect_identical(lab(reduce(x, ignore.strand = TRUE)),
+                     .ranges_label(reduce(gr, ignore.strand = TRUE)))
+    expect_identical(lab(disjoin(x)), .ranges_label(disjoin(gr)))
+    expect_identical(lab(range(x)), .ranges_label(range(gr)))
+    expect_identical(lab(range(x, ignore.strand = TRUE)),
+                     .ranges_label(range(gr, ignore.strand = TRUE)))
+    expect_identical(lab(gaps(x)), .ranges_label(gaps(gr)))
+    expect_identical(lab(intersect(x, y)), .ranges_label(intersect(gr, other)))
+    expect_identical(lab(setdiff(x, y)), .ranges_label(setdiff(gr, other)))
+})
+
+## One value per call. A per-range vector cannot be written into the SQL of a
+## lazy object, so it is refused where it is passed, not when the result is
+## first used (or, for shift(), taken silently with only its first value).
+test_that("a per-range vector argument is refused up front", {
+    gr <- GRanges(c("chr1:100-109:+", "chr1:200-219:-", "chr2:50-59:+",
+                    "chr2:300-304:-"))
+    tf <- tempfile(fileext = ".parquet")
+    on.exit(unlink(tf))
+    arrow::write_parquet(as.data.frame(gr), tf)
+    x <- DuckDBGRanges(tf, seqnames = "seqnames", start = "start", end = "end",
+                       strand = "strand")
+    empty <- x[0L]
+    v <- c(1L, 2L, 3L, 4L)
+
+    msg <- "single value"
+    expect_error(shift(x, v), msg)
+    expect_error(resize(x, v), msg)
+    expect_error(resize(x, 5L, fix = c("start", "end", "center", "start")), msg)
+    expect_error(flank(x, v), msg)
+    expect_error(flank(x, 2L, start = c(TRUE, FALSE, TRUE, FALSE)), msg)
+    expect_error(promoters(x, upstream = v), msg)
+    expect_error(promoters(x, downstream = v), msg)
+    expect_error(terminators(x, upstream = v), msg)
+    expect_error(narrow(x, start = v), msg)
+    expect_error(narrow(x, end = v), msg)
+    expect_error(restrict(x, start = v), "single values")
+    # an empty object is checked too, not waved through
+    expect_error(shift(empty, v), msg)
+    expect_error(resize(empty, v), msg)
+
+    # a value of the wrong kind, and values the reference refuses
+    expect_error(shift(x, NA_integer_), "NA")
+    expect_error(shift(x, "a"), "number")
+    expect_error(resize(x, 5L, fix = "middle"), "one of")
+    expect_error(promoters(x, upstream = -1L), ">= 0")
+    expect_error(terminators(x, downstream = -1L), ">= 0")
+
+    # a single value works as before, and agrees with the GRanges
+    lab <- function(d) .ranges_label(as(d, "GRanges"))
+    expect_identical(lab(shift(x, 5L)), .ranges_label(shift(gr, 5L)))
+    expect_identical(lab(resize(x, 7L)), .ranges_label(resize(gr, 7L)))
+    expect_identical(lab(flank(x, 3L)), .ranges_label(flank(gr, 3L)))
+    expect_identical(lab(promoters(x, 10L, 5L)), .ranges_label(promoters(gr, 10L, 5L)))
+    expect_identical(lab(narrow(x, start = 2L)), .ranges_label(narrow(gr, start = 2L)))
+    # restrict still takes a vector named by seqname
+    expect_s4_class(restrict(x, start = c(chr1 = 110L), end = c(chr1 = 150L)),
+                    "DuckDBGRanges")
+})

@@ -1,5 +1,5 @@
 Package: DuckDBGRanges
-Version: 0.99.11
+Version: 0.99.12
 Date: 2026-11-20
 Title: DuckDB-Backed GenomicRanges Implementation
 Description:

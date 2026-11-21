@@ -1,3 +1,25 @@
+# DuckDBGRanges 0.99.13
+
+## Bug fixes
+
+- `setdiff()` returned ranges that run past the end of a sequence untrimmed. A
+  `GRanges` builds `setdiff()` on `gaps()`, so its result lies within the
+  sequence, from position 1 to the sequence length, wherever the length is
+  known: with a length of 100, `setdiff()` of `85-145` and an empty set is
+  `85-100`, and a range that lies wholly past the end is dropped. The result is
+  now clipped in the same way. A sequence whose length is `NA` is not clipped.
+  `union()` and `intersect()` do not trim in a `GRanges` and did not here.
+
+## Testing
+
+- New tests compare `setdiff()` with a `GRanges` for ranges that run past the end
+  of a sequence, for an empty second set, for a sequence of unknown length, and
+  for random ranges with start positions below 1. They fail on the previous
+  code.
+- A new test keeps `union()` of two ranges that are far apart separate, for
+  sequence lengths that are shorter and longer than the ranges and for an
+  unknown length.
+
 # DuckDBGRanges 0.99.12
 
 ## Significant changes

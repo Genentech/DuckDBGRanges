@@ -4073,3 +4073,67 @@ test_that("gaps keeps the gaps before and between ranges when a seqlength is NA"
         }
     }
 })
+
+test_that("setdiff clips its result to the sequence lengths, as GRanges does", {
+    canon <- function(g) {
+        d <- as.data.frame(g)[, c("seqnames", "start", "end", "strand")]
+        d$seqnames <- as.character(d$seqnames)
+        d$strand <- as.character(d$strand)
+        d <- d[order(d$seqnames, d$strand, d$start, d$end), ]
+        rownames(d) <- NULL
+        d
+    }
+    mk <- function(len, s, e, str = "*") {
+        suppressWarnings(GRanges("chr1", IRanges(s, e), str, seqinfo = Seqinfo("chr1", len)))
+    }
+
+    # ranges that run past the end of the sequence
+    x <- mk(100L, 85, 145)
+    for (y in list(mk(100L, 165, 166), mk(100L, 60, 90), x[0L])) {
+        expect_equal(canon(setdiff(.ddb_from_granges(x), .ddb_from_granges(y))),
+                     canon(setdiff(x, y)))
+    }
+    # a range wholly past the end is dropped
+    x2 <- mk(100L, c(85, 120), c(95, 130))
+    expect_equal(canon(setdiff(.ddb_from_granges(x2), .ddb_from_granges(x2)[0L])),
+                 canon(setdiff(x2, x2[0L])))
+    # no clipping when the length is unknown
+    xna <- suppressWarnings(GRanges("chr1", IRanges(85, 145), "*", seqinfo = Seqinfo("chr1")))
+    expect_equal(canon(setdiff(.ddb_from_granges(xna), .ddb_from_granges(xna)[0L])),
+                 canon(setdiff(xna, xna[0L])))
+
+    set.seed(5)
+    for (rep in 1:20) {
+        len <- sample(c(NA, 100L, 150L), 1L)
+        si <- Seqinfo(c("chr1", "chr2"), c(len, 200L))
+        mkr <- function(k) {
+            suppressWarnings(GRanges(sample(c("chr1", "chr2"), k, TRUE),
+                                     IRanges(sample(-20:190, k, TRUE), width = sample(60L, k, TRUE)),
+                                     sample(c("+", "-", "*"), k, TRUE), seqinfo = si))
+        }
+        x <- mkr(sample(1:7, 1L))
+        y <- mkr(if (rep %% 5 == 0) 0L else sample(1:7, 1L))
+        for (ig in c(FALSE, TRUE)) {
+            expect_equal(canon(setdiff(.ddb_from_granges(x), .ddb_from_granges(y), ignore.strand = ig)),
+                         canon(suppressWarnings(setdiff(x, y, ignore.strand = ig))))
+        }
+    }
+})
+
+test_that("union keeps ranges that are far apart separate, also past the sequence length", {
+    canon <- function(g) {
+        d <- as.data.frame(g)[, c("seqnames", "start", "end", "strand")]
+        d$seqnames <- as.character(d$seqnames)
+        d$strand <- as.character(d$strand)
+        d[order(d$seqnames, d$strand, d$start, d$end), ]
+    }
+    for (len in c(NA, 100L, 150L, 300L)) {
+        si <- Seqinfo("chr1", len)
+        x <- suppressWarnings(GRanges("chr1", IRanges(85, 145), "*", seqinfo = si))
+        y <- suppressWarnings(GRanges("chr1", IRanges(165, 166), "*", seqinfo = si))
+        got <- canon(union(.ddb_from_granges(x), .ddb_from_granges(y)))
+        expect_identical(got$start, c(85L, 165L))
+        expect_identical(got$end, c(145L, 166L))
+        expect_equal(got, canon(suppressWarnings(union(x, y))), check.attributes = FALSE)
+    }
+})

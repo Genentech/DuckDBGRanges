@@ -3614,6 +3614,44 @@ function(x, y, ignore.strand = FALSE)
     if (!isTRUEorFALSE(ignore.strand))
         stop("'ignore.strand' must be TRUE or FALSE")
 
+    .clip_to_seqlengths(.setdiff_unclipped(x, y, ignore.strand))
+})
+
+# Clip ranges to [1, seqlength] for the seqlevels whose length is known, and
+# drop the ranges that fall wholly outside.
+#' @importFrom DuckDBDataFrame tblconn
+#' @importFrom dplyr copy_to filter left_join mutate select
+#' @importFrom Seqinfo seqlengths
+.clip_to_seqlengths <- function(x) {
+    if (length(x) == 0L)
+        return(x)
+    sl <- seqlengths(x)
+    bounds <- data.frame(seqnames = names(sl), .bound_end = as.integer(sl),
+                         stringsAsFactors = FALSE)
+    bounds <- copy_to(dbconn(x@frame), bounds,
+                      name = paste0("bounds_", sample.int(1e6, 1L)),
+                      temporary = TRUE, overwrite = TRUE)
+    conn <- select(tblconn(x@frame),
+                   !!!lapply(c("seqnames", "start", "end", "strand"), as.name))
+    conn <- left_join(conn, bounds, by = "seqnames")
+    conn <- mutate(conn, !!!list(
+        start = call("greatest", as.name("start"), 1L),
+        end = call("least", as.name("end"),
+                   call("coalesce", as.name(".bound_end"), as.name("end")))))
+    conn <- filter(conn, !!!list(call("<=", as.name("start"), as.name("end"))))
+    conn <- mutate(conn, !!!list(
+        width = call("+", call("-", as.name("end"), as.name("start")), 1L)))
+    conn <- select(conn, !!!lapply(c("seqnames", "start", "end", "width", "strand"),
+                                   as.name))
+    .build_DuckDBGRanges(conn, seqinfo(x))
+}
+
+.setdiff_unclipped <-
+function(x, y, ignore.strand = FALSE)
+{
+    if (!isTRUEorFALSE(ignore.strand))
+        stop("'ignore.strand' must be TRUE or FALSE")
+
     # setdiff algorithm using event-based approach:
     # For each x range, we need to subtract ALL overlapping y ranges.
     # The correct approach is:
@@ -3787,7 +3825,7 @@ function(x, y, ignore.strand = FALSE)
 
     merged_seqinfo <- merge(seqinfo(x), seqinfo(y))
     .build_DuckDBGRanges(result, merged_seqinfo)
-})
+}
 
 #' @export
 setMethod("setdiff", c("DuckDBGRanges", "GRanges"),

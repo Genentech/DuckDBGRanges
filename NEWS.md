@@ -9,6 +9,19 @@
   `85-100`, and a range that lies wholly past the end is dropped. The result is
   now clipped in the same way. A sequence whose length is `NA` is not clipped.
   `union()` and `intersect()` do not trim in a `GRanges` and did not here.
+- The temporary tables that `gaps()`, `setdiff()`, `trim()`, `restrict()`,
+  `coverage()` with a shift, the position lookups and the key mapping create in
+  the database were named with a number drawn from the random number generator,
+  so after `set.seed()` the same name came up again. A table is created with
+  `overwrite = TRUE`, so for a function that returns a lazy result, the second
+  call replaced the table that the result of the first still read, and that
+  result silently changed: with the same seed,
+  `gaps()` of a sequence of length 100 gave `1-300` for its last gap once
+  `gaps()` of a sequence of length 300 had been made. The names now come from
+  `tempfile()`, which does not depend on the generator. Two names that were
+  fixed, `"query_ranges"` and `"subject_temp"`, are made unique as well. Their
+  tables are read before the function returns, so they were not wrong, but they
+  relied on it.
 
 ## Testing
 
@@ -19,6 +32,10 @@
 - A new test keeps `union()` of two ranges that are far apart separate, for
   sequence lengths that are shorter and longer than the ranges and for an
   unknown length.
+- New tests check that the temporary table names differ after a repeated
+  `set.seed()`, and that `gaps()`, `setdiff()`, `trim()` and `restrict()` return
+  the right result for the first of two inputs when both are made with the same
+  seed and the first is collected last. They fail on the previous code.
 
 # DuckDBGRanges 0.99.12
 

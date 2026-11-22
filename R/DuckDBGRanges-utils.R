@@ -451,10 +451,16 @@ NULL
 ### Helper functions
 ###
 
+# A name for a temporary table that does not depend on the random number
+# generator. A name drawn with sample.int() repeats after set.seed(), and a
+# repeated name overwrites the table that an earlier lazy result still reads.
+.tempTableName <- function(prefix) basename(tempfile(prefix))
+
 # Create a temporary DuckDB table from a GRanges query
 #' @importFrom dplyr copy_to tbl
 #' @importFrom GenomicRanges seqnames
-.granges_to_temp_table <- function(query, con, table_name = "query_ranges") {
+.granges_to_temp_table <-
+function(query, con, table_name = .tempTableName("query_ranges_")) {
     query_df <- data.frame(
         query_idx = seq_along(query),
         seqnames = as.character(seqnames(query)),
@@ -986,8 +992,9 @@ function(query, subject, maxgap, minoverlap, type, ignore.strand = FALSE)
             subject_strand = as.character(strand(subject)),
             stringsAsFactors = FALSE
         )
-        copy_to(con, subject_df, name = "subject_temp", temporary = TRUE, overwrite = TRUE)
-        subject_conn <- tbl(con, "subject_temp")
+        subject_name <- .tempTableName("subject_temp_")
+        copy_to(con, subject_df, name = subject_name, temporary = TRUE, overwrite = TRUE)
+        subject_conn <- tbl(con, subject_name)
     }
 
     # Build overlap conditions (seqnames handled by inner_join)
@@ -1670,7 +1677,7 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
 
         # Upload position lookup to DuckDB
         position_tbl <- copy_to(dbconn(frame), position_df,
-                                name = paste0("pos_lookup_", sample.int(1e6, 1)),
+                                name = .tempTableName("pos_lookup_"),
                                 temporary = TRUE, overwrite = TRUE)
 
         # Join to get positions, then compute duplicates
@@ -1795,7 +1802,7 @@ function(x, table, nomatch = NA_integer_, incomparables = NULL,
 
     # Upload position lookup to DuckDB
     position_tbl <- copy_to(dbconn(frame_table), position_df,
-                            name = paste0("match_pos_", sample.int(1e6, 1)),
+                            name = .tempTableName("match_pos_"),
                             temporary = TRUE, overwrite = TRUE)
 
     # Get connections
@@ -1908,7 +1915,7 @@ function(x, table, nomatch = NA_integer_, incomparables = NULL,
     }
 
     # Upload to DuckDB as temporary table
-    table_name <- paste0("gr_temp_", sample.int(1e6, 1))
+    table_name <- .tempTableName("gr_temp_")
     ddb_tbl <- copy_to(conn, gr_df, name = table_name, temporary = TRUE, overwrite = TRUE)
 
     # Create datacols expression
@@ -2639,7 +2646,7 @@ function(x, use.names = TRUE, ...)
     db_conn <- dbconn(frame)
 
     # Upload seqlengths as temporary table
-    table_name <- paste0("seqlen_trim_", sample.int(1e6, 1))
+    table_name <- .tempTableName("seqlen_trim_")
     seqlen_tbl <- copy_to(db_conn, seqlen_df, name = table_name,
                           temporary = TRUE, overwrite = TRUE)
 
@@ -2715,7 +2722,7 @@ function(x, start = NA, end = NA, keep.all.ranges = FALSE, use.names = TRUE)
         constraint_df$restrict_end[is.na(constraint_df$restrict_end)] <- .Machine$integer.max
 
         # Upload constraints as temporary table
-        table_name <- paste0("restrict_", sample.int(1e6, 1))
+        table_name <- .tempTableName("restrict_")
         constraint_tbl <- copy_to(db_conn, constraint_df, name = table_name,
                                   temporary = TRUE, overwrite = TRUE)
 
@@ -3018,7 +3025,7 @@ function(x, start = 1L, end = seqlengths(x), ignore.strand = FALSE)
 
     # Upload bounds table
     bounds_tbl <- copy_to(db_conn, bounds_df,
-                          name = paste0("bounds_", sample.int(1e6, 1)),
+                          name = .tempTableName("bounds_"),
                           temporary = TRUE, overwrite = TRUE)
 
     # Handle strand for grouping
@@ -3313,7 +3320,7 @@ function(x, with.revmap = FALSE, ignore.strand = FALSE)
     shift_df <- data.frame(seqnames = x_seqlevels, .shift = shift,
                            stringsAsFactors = FALSE)
     shift_tbl <- copy_to(db_conn, shift_df,
-                         name = paste0("coverage_shift_", sample.int(1e6, 1)),
+                         name = .tempTableName("coverage_shift_"),
                          temporary = TRUE, overwrite = TRUE)
 
     conn <- inner_join(conn, shift_tbl, by = "seqnames")
@@ -3629,7 +3636,7 @@ function(x, y, ignore.strand = FALSE)
     bounds <- data.frame(seqnames = names(sl), .bound_end = as.integer(sl),
                          stringsAsFactors = FALSE)
     bounds <- copy_to(dbconn(x@frame), bounds,
-                      name = paste0("bounds_", sample.int(1e6, 1L)),
+                      name = .tempTableName("bounds_"),
                       temporary = TRUE, overwrite = TRUE)
     conn <- select(tblconn(x@frame),
                    !!!lapply(c("seqnames", "start", "end", "strand"), as.name))
@@ -3875,7 +3882,7 @@ function(x, y, ignore.strand = FALSE)
     names(mapping_df) <- c(keycol_name, idx_name)
     
     # Copy mapping to DuckDB
-    temp_name <- paste0(prefix, "_keycol_map_", sample(1e6, 1))
+    temp_name <- .tempTableName(paste0(prefix, "_keycol_map_"))
     mapping_tbl <- copy_to(db_conn, mapping_df, temp_name, overwrite = TRUE)
     
     # Join to add the index

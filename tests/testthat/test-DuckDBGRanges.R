@@ -4137,3 +4137,43 @@ test_that("union keeps ranges that are far apart separate, also past the sequenc
         expect_equal(got, canon(suppressWarnings(union(x, y))), check.attributes = FALSE)
     }
 })
+
+test_that("temporary table names do not repeat after set.seed()", {
+    set.seed(1)
+    a <- DuckDBGRanges:::.tempTableName("t_")
+    set.seed(1)
+    b <- DuckDBGRanges:::.tempTableName("t_")
+    expect_false(identical(a, b))
+    expect_match(a, "^t_")
+})
+
+test_that("lazy results keep their own temporary tables when the seed is repeated", {
+    # a name drawn with sample.int() repeats after set.seed(), and the second
+    # call then overwrote the table that the first lazy result still reads
+    canon <- function(g) {
+        d <- as.data.frame(g)[, c("seqnames", "start", "end", "strand")]
+        d$seqnames <- as.character(d$seqnames)
+        d$strand <- as.character(d$strand)
+        d <- d[order(d$seqnames, d$strand, d$start, d$end), ]
+        rownames(d) <- NULL
+        d
+    }
+    mk <- function(len, s, e) {
+        suppressWarnings(GRanges("chr1", IRanges(s, e), "*", seqinfo = Seqinfo("chr1", len)))
+    }
+    a <- mk(100L, c(10, 40), c(20, 50))
+    b <- mk(300L, c(10, 40), c(20, 50))
+    ops <- list(
+        gaps = function(g) gaps(g),
+        setdiff = function(g) setdiff(mk(seqlengths(g)[[1L]], 5, 150), g),
+        trim = function(g) trim(g),
+        restrict = function(g) restrict(g, start = 15, end = 45))
+    for (nm in names(ops)) {
+        op <- ops[[nm]]
+        set.seed(1); first <- op(.ddb_from_granges(a))
+        set.seed(1); second <- op(.ddb_from_granges(b))
+        # collect the first only after the second has been made
+        expect_equal(canon(first), canon(suppressWarnings(op(a))), info = nm)
+        expect_equal(canon(second), canon(suppressWarnings(op(b))), info = nm)
+    }
+})

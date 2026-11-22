@@ -597,12 +597,12 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
 #' @importFrom Seqinfo seqlevels
 .add_order_ranks <- function(conn, seqinfo) {
     lv <- seqlevels(seqinfo)
-    ranks <- data.frame(seqnames = lv, .seq_rank = seq_along(lv),
-                        stringsAsFactors = FALSE)
+    ranks <- data.frame(seqnames = lv, `__seq_rank__` = seq_along(lv),
+                        stringsAsFactors = FALSE, check.names = FALSE)
     ranks <- copy_to(remote_con(conn), ranks, name = basename(tempfile("seqrank_")),
                      temporary = TRUE, overwrite = FALSE)
     conn <- left_join(conn, ranks, by = "seqnames")
-    mutate(conn, .strand_rank = sql(
+    mutate(conn, `__strand_rank__` = sql(
         "CASE strand WHEN '+' THEN 1 WHEN '-' THEN 2 WHEN '*' THEN 3 ELSE 4 END"))
 }
 
@@ -610,7 +610,7 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
 # position, so that ranges that tie keep their order, as they do for a GRanges
 # (also for decreasing = TRUE, where only the first four keys are reversed).
 .order_keys <- function(decreasing, ignore.strand, pos) {
-    keys <- lapply(c(".seq_rank", if (!ignore.strand) ".strand_rank", "start", "end"),
+    keys <- lapply(c("__seq_rank__", if (!ignore.strand) "__strand_rank__", "start", "end"),
                    as.name)
     if (decreasing)
         keys <- lapply(keys, function(k) call("desc", k))
@@ -639,7 +639,7 @@ function(query, subject, maxgap = -1L, minoverlap = 0L, ignore.strand = FALSE)
     if (is.null(order_by)) {
         conn <- .add_order_ranks(conn, seqinfo)
         conn <- window_order(conn, !!!lapply(
-            c(".seq_rank", ".strand_rank", "start", "end"), as.name))
+            c("__seq_rank__", "__strand_rank__", "start", "end"), as.name))
     } else if (length(order_by) > 0) {
         conn <- window_order(conn, !!!order_by)
     }
@@ -1284,9 +1284,9 @@ function(x, start = NA, end = NA, width = NA, use.names = TRUE)
             call("<", ns_chk, as.name("start")),
             call(">", ne_chk, as.name("end")))),
         call("(", call("<", ne_chk, call("-", ns_chk, 1L))))
-    conn <- mutate(tblconn(frame), .narrow_bad = !!bad_expr)
+    conn <- mutate(tblconn(frame), `__narrow_bad__` = !!bad_expr)
     n_bad <- pull(summarize(conn, !!!setNames(list(
-        call("sum", call("as.integer", as.name(".narrow_bad")), na.rm = TRUE)),
+        call("sum", call("as.integer", as.name("__narrow_bad__")), na.rm = TRUE)),
         "n_bad")))
     if (isTRUE(n_bad > 0L))
         stop("the supplied 'start'/'end'/'width' would widen or invert ",
@@ -1987,14 +1987,14 @@ function(x, table, nomatch = NA_integer_, incomparables = NULL,
 
     # Pair x[i] with y[i] by each object's own recorded key rather than a bare
     # row_number() over DuckDB's undefined scan order.
-    x_conn <- .add_keycol_indices(x_conn, x_frame, db_conn, ".row_idx", "pset_x")
-    y_conn <- .add_keycol_indices(y_conn, y_frame, db_conn, ".row_idx", "pset_y")
+    x_conn <- .add_keycol_indices(x_conn, x_frame, db_conn, "__row_idx__", "pset_x")
+    y_conn <- .add_keycol_indices(y_conn, y_frame, db_conn, "__row_idx__", "pset_y")
     y_select_list <- setNames(
-        lapply(c(".row_idx", "seqnames", "start", "end", "strand"), as.name),
-        c(".row_idx", "y_seqnames", "y_start", "y_end", "y_strand"))
+        lapply(c("__row_idx__", "seqnames", "start", "end", "strand"), as.name),
+        c("__row_idx__", "y_seqnames", "y_start", "y_end", "y_strand"))
     y_conn <- select(y_conn, !!!y_select_list)
 
-    joined <- inner_join(x_conn, y_conn, by = ".row_idx", copy = TRUE)
+    joined <- inner_join(x_conn, y_conn, by = "__row_idx__", copy = TRUE)
 
     # The strand sub-expression is parenthesized explicitly because dbplyr does
     # not parenthesize a '|' operand of '&' on its own (see pgap()).
@@ -2055,12 +2055,12 @@ function(x, table, nomatch = NA_integer_, incomparables = NULL,
     # Retain .row_idx so the result keeps the x[i]/y[i] pairing order;
     # .build_DuckDBGRanges()'s default coordinate sort would permute it.
     select_rename_list <- setNames(
-        lapply(c(".row_idx", "seqnames", "strand", "new_start", "new_end",
+        lapply(c("__row_idx__", "seqnames", "strand", "new_start", "new_end",
                  "new_width"), as.name),
-        c(".row_idx", "seqnames", "strand", "start", "end", "width"))
+        c("__row_idx__", "seqnames", "strand", "start", "end", "width"))
     joined <- select(joined, !!!select_rename_list)
 
-    .build_DuckDBGRanges(joined, seqinfo(x), order_by = list(as.name(".row_idx")))
+    .build_DuckDBGRanges(joined, seqinfo(x), order_by = list(as.name("__row_idx__")))
 }
 
 #' @export
@@ -2175,14 +2175,14 @@ function(x, y, ignore.strand = FALSE)
     # Pair x[i] with y[i] by each object's own recorded key rather than a bare
     # row_number() over DuckDB's undefined scan order (the same correction the
     # pgap() rewrite made).
-    x_conn <- .add_keycol_indices(x_conn, x_frame, db_conn, ".row_idx", "psetdiff_x")
-    y_conn <- .add_keycol_indices(y_conn, y_frame, db_conn, ".row_idx", "psetdiff_y")
+    x_conn <- .add_keycol_indices(x_conn, x_frame, db_conn, "__row_idx__", "psetdiff_x")
+    y_conn <- .add_keycol_indices(y_conn, y_frame, db_conn, "__row_idx__", "psetdiff_y")
     y_select_list <- setNames(
-        lapply(c(".row_idx", "seqnames", "start", "end", "strand"), as.name),
-        c(".row_idx", "y_seqnames", "y_start", "y_end", "y_strand"))
+        lapply(c("__row_idx__", "seqnames", "start", "end", "strand"), as.name),
+        c("__row_idx__", "y_seqnames", "y_start", "y_end", "y_strand"))
     y_conn <- select(y_conn, !!!y_select_list)
 
-    joined <- inner_join(x_conn, y_conn, by = ".row_idx", copy = TRUE)
+    joined <- inner_join(x_conn, y_conn, by = "__row_idx__", copy = TRUE)
 
     # y[i] is subtracted from x[i] only where the two are on the same seqname
     # and (unless ignore.strand) a compatible strand ('*' matches any strand),
@@ -2246,15 +2246,15 @@ function(x, y, ignore.strand = FALSE)
     # x[i]/y[i] pairing; .build_DuckDBGRanges()'s datacols expression below
     # doesn't name it, so it never becomes a visible column of the result.
     select_rename_list <- setNames(
-        lapply(c(".row_idx", "seqnames", "strand", "new_start", "new_end", "new_width"),
+        lapply(c("__row_idx__", "seqnames", "strand", "new_start", "new_end", "new_width"),
                as.name),
-        c(".row_idx", "seqnames", "strand", "start", "end", "width"))
+        c("__row_idx__", "seqnames", "strand", "start", "end", "width"))
     joined <- select(joined, !!!select_rename_list)
 
     # psetdiff() is positional (result[i] is x[i] minus y[i]): order by the
     # pairing index rather than .build_DuckDBGRanges()'s default coordinate
     # sort, which would silently permute the result relative to x/y.
-    .build_DuckDBGRanges(joined, seqinfo(x), order_by = list(as.name(".row_idx")))
+    .build_DuckDBGRanges(joined, seqinfo(x), order_by = list(as.name("__row_idx__")))
 })
 
 #' @export
@@ -2304,21 +2304,21 @@ function(x, y, ignore.strand = FALSE, ...)
     x_frame <- x@frame
     db_conn <- dbconn(x_frame)
     x_conn <- .add_keycol_indices(tblconn(x_frame), x_frame, db_conn,
-                                  ".row_idx", "distance_x")
+                                  "__row_idx__", "distance_x")
     x_select_list <- setNames(
-        lapply(c(".row_idx", "seqnames", "strand", "start", "end"), as.name),
-        c(".row_idx", "x_seqnames", "x_strand", "x_start", "x_end"))
+        lapply(c("__row_idx__", "seqnames", "strand", "start", "end"), as.name),
+        c("__row_idx__", "x_seqnames", "x_strand", "x_start", "x_end"))
     x_conn <- select(x_conn, !!!x_select_list)
 
     y_frame <- y@frame
     y_conn <- .add_keycol_indices(tblconn(y_frame), y_frame, db_conn,
-                                  ".row_idx", "distance_y")
+                                  "__row_idx__", "distance_y")
     y_select_list <- setNames(
-        lapply(c(".row_idx", "seqnames", "strand", "start", "end"), as.name),
-        c(".row_idx", "y_seqnames", "y_strand", "y_start", "y_end"))
+        lapply(c("__row_idx__", "seqnames", "strand", "start", "end"), as.name),
+        c("__row_idx__", "y_seqnames", "y_strand", "y_start", "y_end"))
     y_conn <- select(y_conn, !!!y_select_list)
 
-    joined <- inner_join(x_conn, y_conn, by = ".row_idx", copy = TRUE)
+    joined <- inner_join(x_conn, y_conn, by = "__row_idx__", copy = TRUE)
 
     # Distance is 0 if overlapping, otherwise gap between ranges
     # distance = max(0, max(x_start, y_start) - min(x_end, y_end) - 1)
@@ -2351,7 +2351,7 @@ function(x, y, ignore.strand = FALSE, ...)
     dist_mutate <- list(dist = dist_expr)
     joined <- mutate(joined, !!!dist_mutate)
 
-    arrange_cols <- list(as.name(".row_idx"))
+    arrange_cols <- list(as.name("__row_idx__"))
     select_cols <- list(as.name("dist"))
     result <- arrange(joined, !!!arrange_cols)
     result <- select(result, !!!select_cols)
@@ -2489,8 +2489,8 @@ function(x, na.rm = FALSE, strictly = FALSE, ignore.strand = FALSE, ...)
     # Add LAG values for comparison
     lag_mutate <- list(
         prev_pos = call("lag", as.name("orig_pos")),
-        prev_seqnames = call("lag", as.name(".seq_rank")),
-        prev_strand = call("lag", as.name(".strand_rank")),
+        prev_seqnames = call("lag", as.name("__seq_rank__")),
+        prev_strand = call("lag", as.name("__strand_rank__")),
         prev_start = call("lag", as.name("start")),
         prev_end = call("lag", as.name("end")))
     conn_with_lag <- mutate(conn, !!!lag_mutate)
@@ -2502,10 +2502,10 @@ function(x, na.rm = FALSE, strictly = FALSE, ignore.strand = FALSE, ...)
     # Build the "is_unsorted" condition in SQL
     # Unsorted if current < prev (seqlevel rank < prev rank, or equal and
     # start < prev_start, etc.)
-    seq_lt <- call("<", as.name(".seq_rank"), as.name("prev_seqnames"))
-    seq_eq <- call("==", as.name(".seq_rank"), as.name("prev_seqnames"))
-    strand_lt <- call("<", as.name(".strand_rank"), as.name("prev_strand"))
-    strand_eq <- call("==", as.name(".strand_rank"), as.name("prev_strand"))
+    seq_lt <- call("<", as.name("__seq_rank__"), as.name("prev_seqnames"))
+    seq_eq <- call("==", as.name("__seq_rank__"), as.name("prev_seqnames"))
+    strand_lt <- call("<", as.name("__strand_rank__"), as.name("prev_strand"))
+    strand_eq <- call("==", as.name("__strand_rank__"), as.name("prev_strand"))
     start_lt <- call("<", as.name("start"), as.name("prev_start"))
     start_eq <- call("==", as.name("start"), as.name("prev_start"))
     end_lt <- call("<", as.name("end"), as.name("prev_end"))
@@ -2579,7 +2579,7 @@ function(x, na.last = TRUE, ties.method = c("first", "min"), ignore.strand = FAL
     # Use SQL window functions for efficient in-database ranking, ordered by
     # seqlevel rank, strand rank, start and end
     conn_with_pos <- .add_order_ranks(conn_with_pos, seqinfo(x))
-    tie_cols <- lapply(c(".seq_rank", if (!ignore.strand) ".strand_rank",
+    tie_cols <- lapply(c("__seq_rank__", if (!ignore.strand) "__strand_rank__",
                          "start", "end"), as.name)
     ranked_conn <- window_order(conn_with_pos,
                                 !!!c(tie_cols, list(as.name("orig_pos"))))
@@ -3317,8 +3317,8 @@ function(x, with.revmap = FALSE, ignore.strand = FALSE)
     conn <- tblconn(frame)
     db_conn <- dbconn(frame)
 
-    shift_df <- data.frame(seqnames = x_seqlevels, .shift = shift,
-                           stringsAsFactors = FALSE)
+    shift_df <- data.frame(seqnames = x_seqlevels, `__shift__` = shift,
+                           stringsAsFactors = FALSE, check.names = FALSE)
     shift_tbl <- copy_to(db_conn, shift_df,
                          name = .tempTableName("coverage_shift_"),
                          temporary = TRUE, overwrite = TRUE)
@@ -3327,13 +3327,13 @@ function(x, with.revmap = FALSE, ignore.strand = FALSE)
 
     # Drop ranges that land entirely before position 1 after shifting.
     conn <- filter(conn, !!!list(
-        call(">=", call("+", as.name("end"), as.name(".shift")), 1L)
+        call(">=", call("+", as.name("end"), as.name("__shift__")), 1L)
     ))
 
     # Start events: +weight at max(start + shift, 1); end events: -weight at
     # (end + shift + 1).
     start_events <- mutate(conn, !!!list(
-        bp = call("greatest", call("+", as.name("start"), as.name(".shift")), 1L)
+        bp = call("greatest", call("+", as.name("start"), as.name("__shift__")), 1L)
     ))
     start_events <- select(start_events, !!!list(
         seqnames = as.name("seqnames"),
@@ -3342,7 +3342,7 @@ function(x, with.revmap = FALSE, ignore.strand = FALSE)
     start_events <- mutate(start_events, !!!list(delta = weight))
 
     end_events <- mutate(conn, !!!list(
-        bp = call("+", call("+", as.name("end"), as.name(".shift")), 1L)
+        bp = call("+", call("+", as.name("end"), as.name("__shift__")), 1L)
     ))
     end_events <- select(end_events, !!!list(
         seqnames = as.name("seqnames"),
@@ -3633,8 +3633,8 @@ function(x, y, ignore.strand = FALSE)
     if (length(x) == 0L)
         return(x)
     sl <- seqlengths(x)
-    bounds <- data.frame(seqnames = names(sl), .bound_end = as.integer(sl),
-                         stringsAsFactors = FALSE)
+    bounds <- data.frame(seqnames = names(sl), `__bound_end__` = as.integer(sl),
+                         stringsAsFactors = FALSE, check.names = FALSE)
     bounds <- copy_to(dbconn(x@frame), bounds,
                       name = .tempTableName("bounds_"),
                       temporary = TRUE, overwrite = TRUE)
@@ -3644,7 +3644,7 @@ function(x, y, ignore.strand = FALSE)
     conn <- mutate(conn, !!!list(
         start = call("greatest", as.name("start"), 1L),
         end = call("least", as.name("end"),
-                   call("coalesce", as.name(".bound_end"), as.name("end")))))
+                   call("coalesce", as.name("__bound_end__"), as.name("end")))))
     conn <- filter(conn, !!!list(call("<=", as.name("start"), as.name("end"))))
     conn <- mutate(conn, !!!list(
         width = call("+", call("-", as.name("end"), as.name("start")), 1L)))
@@ -4506,14 +4506,14 @@ function(x, y, ignore.strand = FALSE, ...)
     y_frame <- y@frame
     y_conn <- tblconn(y_frame)
 
-    x_conn <- .add_keycol_indices(x_conn, x_frame, db_conn, ".row_idx", "pgap_x")
-    y_conn <- .add_keycol_indices(y_conn, y_frame, db_conn, ".row_idx", "pgap_y")
+    x_conn <- .add_keycol_indices(x_conn, x_frame, db_conn, "__row_idx__", "pgap_x")
+    y_conn <- .add_keycol_indices(y_conn, y_frame, db_conn, "__row_idx__", "pgap_y")
     y_select_list <- setNames(
-        lapply(c(".row_idx", "seqnames", "start", "end", "strand"), as.name),
-        c(".row_idx", "y_seqnames", "y_start", "y_end", "y_strand"))
+        lapply(c("__row_idx__", "seqnames", "start", "end", "strand"), as.name),
+        c("__row_idx__", "y_seqnames", "y_start", "y_end", "y_strand"))
     y_conn <- select(y_conn, !!!y_select_list)
 
-    joined <- inner_join(x_conn, y_conn, by = ".row_idx", copy = TRUE)
+    joined <- inner_join(x_conn, y_conn, by = "__row_idx__", copy = TRUE)
 
     # pgap()'s gap formula (matching IRanges:::pgap,IntegerRanges,IntegerRanges):
     # new_start = min(end(x), end(y)) + 1; the naive gap end, max(start(x),
@@ -4556,14 +4556,14 @@ function(x, y, ignore.strand = FALSE, ...)
     # x[i]/y[i] pairing; .build_DuckDBGRanges()'s datacols expression below
     # doesn't name it, so it never becomes a visible column of the result.
     select_rename_list <- setNames(
-        lapply(c(".row_idx", "seqnames", "strand", "new_start", "new_end", "new_width"), as.name),
-        c(".row_idx", "seqnames", "strand", "start", "end", "width"))
+        lapply(c("__row_idx__", "seqnames", "strand", "new_start", "new_end", "new_width"), as.name),
+        c("__row_idx__", "seqnames", "strand", "start", "end", "width"))
     joined <- select(joined, !!!select_rename_list)
 
     # pgap() is positional (result[i] is the gap of x[i]/y[i]): order by the
     # pairing index rather than .build_DuckDBGRanges()'s default coordinate
     # sort, which would silently permute the result relative to x/y.
-    .build_DuckDBGRanges(joined, seqinfo(x), order_by = list(as.name(".row_idx")))
+    .build_DuckDBGRanges(joined, seqinfo(x), order_by = list(as.name("__row_idx__")))
 })
 
 #' @export

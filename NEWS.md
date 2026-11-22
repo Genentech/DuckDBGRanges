@@ -23,6 +23,14 @@
   tables are read before the function returns, so they were not wrong, but they
   relied on it.
 
+## Internal changes
+
+- The columns that the generated queries use for their own bookkeeping are named
+  `__row_idx__`, `__shift__`, `__narrow_bad__`, `__seq_rank__`, `__strand_rank__`
+  and `__bound_end__`. They used to start with a dot, and now follow the style of
+  the columns that reach files and schemas, such as `__name__` and `__index__`.
+  Only the names changed.
+
 ## Testing
 
 - New tests compare `setdiff()` with a `GRanges` for ranges that run past the end

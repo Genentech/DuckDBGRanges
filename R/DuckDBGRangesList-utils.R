@@ -181,7 +181,7 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
                                 collapse = " "),
                          sprintf("ELSE %d", length(keyvals) + 1L))
 
-    idx_mutate <- list(.row_idx = sql(case_expr))
+    idx_mutate <- list(`__row_idx__` = sql(case_expr))
     list_conn <- mutate(list_conn, !!!idx_mutate)
 
     # Step 5: Build datacols with computed end column
@@ -195,11 +195,11 @@ function(x, ..., with.revmap = FALSE, ignore.strand = FALSE, na.rm = FALSE)
 
     # Create new DuckDBDataFrame using .row_idx as keycol
     # The integer indices 1, 2, 3, ... will be naturally sorted
-    new_frame <- DuckDBDataFrame(list_conn, datacols = datacols, keycol = ".row_idx")
+    new_frame <- DuckDBDataFrame(list_conn, datacols = datacols, keycol = "__row_idx__")
 
     # Map row indices back to original names
-    idx_vals <- new_frame@keycols[[".row_idx"]]
-    new_frame@keycols[[".row_idx"]] <- setNames(idx_vals, keyvals[idx_vals])
+    idx_vals <- new_frame@keycols[["__row_idx__"]]
+    new_frame@keycols[["__row_idx__"]] <- setNames(idx_vals, keyvals[idx_vals])
 
     # Return new DuckDBGRangesList
     new2("DuckDBGRangesList",

@@ -1,3 +1,10 @@
+# DuckDBGRanges 0.99.14
+
+## Changes
+
+- Added the `Coverage` biocView to the DESCRIPTION, since `coverage()` is
+  implemented for a `DuckDBGRanges`. Only the metadata of the package changed.
+
 # DuckDBGRanges 0.99.13
 
 ## Bug fixes
